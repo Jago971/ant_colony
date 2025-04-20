@@ -3,7 +3,7 @@ export class Ant {
         this.x = x;
         this.y = y;
         this.direction = 0;
-        this.step = 0;
+        this.stepCount = 0;
     }
 
     static directions = [
@@ -27,11 +27,13 @@ export class Ant {
         ctx.fillRect(this.x, this.y, 1, 1);
     }
 
-    trail(ctx) {
-        this.stepCount % 2 === 0
-            ? (ctx.fillStyle = "blue")
-            : (ctx.fillStyle = "white");
-        ctx.fillRect(this.x, this.y, 1, 1);
+    trail(ctx, trailMap) {
+        if (this.stepCount % 2 === 0) {
+            trailMap.set(`${this.x},${this.y}`, { r: 0, g: 0, b: 255 });
+            ctx.fillRect(this.x, this.y, 1, 1);
+        } else {
+            this.erase(ctx);
+        }
     }
 
     rotate(step = 1) {
@@ -39,6 +41,7 @@ export class Ant {
     }
 
     move(gridWidth, gridHeight) {
+        console.log(this.stepCount);
         this.stepCount++;
         const [dx, dy] = Ant.directions[this.direction];
         this.x = Math.max(0, Math.min(gridWidth - 1, this.x + dx));
