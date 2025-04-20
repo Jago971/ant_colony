@@ -5,7 +5,8 @@ export class Ant {
         this.direction = 6;
         this.stepCount = 0;
         this.radar = [];
-        this.radarDiamater = 7;
+        this.radarDiameter = 11;
+        this.signalDirection = null;
     }
 
     static directions = [
@@ -19,27 +20,23 @@ export class Ant {
         [-1, -1], // 7: up-left
     ];
 
-    draw(ctx, color = "black") {
-        ctx.fillStyle = color;
-        ctx.fillRect(this.x, this.y, 1, 1);
+    draw(context, color = "black") {
+        context.fillStyle = color;
+        context.fillRect(this.x, this.y, 1, 1);
     }
 
-    erase(ctx) {
-        ctx.fillStyle = "white";
-        ctx.fillRect(this.x, this.y, 1, 1);
+    erase(context) {
+        context.fillStyle = "white";
+        context.fillRect(this.x, this.y, 1, 1);
     }
 
-    trail(ctx, trailMap) {
+    trail(context, trailMap) {
+        const key = `${this.x},${this.y}`;
         if (this.stepCount % 2 === 0) {
-            trailMap.set(`${this.x},${this.y}`, { r: 0, g: 0, b: 255, v: 255 });
-            ctx.fillRect(this.x, this.y, 1, 1);
+            trailMap.set(key, { r: 255, g: 0, b: 0, v: 255 });
+            context.fillRect(this.x, this.y, 1, 1);
         } else {
-            trailMap.set(`${this.x},${this.y}`, {
-                r: 255,
-                g: 255,
-                b: 255,
-                v: 255,
-            });
+            trailMap.set(key, { r: 255, g: 255, b: 255, v: 255 });
         }
     }
 
@@ -49,70 +46,108 @@ export class Ant {
 
     move(gridWidth, gridHeight) {
         this.stepCount++;
-        const [dx, dy] = Ant.directions[this.direction];
-        this.x = Math.max(0, Math.min(gridWidth - 1, this.x + dx));
-        this.y = Math.max(0, Math.min(gridHeight - 1, this.y + dy));
+        const [offsetX, offsetY] = Ant.directions[this.direction];
+        this.x = Math.max(0, Math.min(gridWidth - 1, this.x + offsetX));
+        this.y = Math.max(0, Math.min(gridHeight - 1, this.y + offsetY));
     }
 
-    radarMap(trailMap) {
-        const radar = [];
-        const radarRadius = Math.floor(this.radarDiamater / 2);
+    radarMap(targetMap) {
+        const radarData = [];
+        const radarRadius = Math.floor(this.radarDiameter / 2);
 
-        for (let dy = -radarRadius; dy <= radarRadius; dy++) {
+        for (let offsetY = -radarRadius; offsetY <= radarRadius; offsetY++) {
             const row = [];
-            for (let dx = -radarRadius; dx <= radarRadius; dx++) {
-                const x = this.x + dx;
-                const y = this.y + dy;
-                const key = `${x},${y}`;
-                const value =
-                    trailMap.has(key) && trailMap.get(key).v
-                        ? trailMap.get(key).v
+            for (
+                let offsetX = -radarRadius;
+                offsetX <= radarRadius;
+                offsetX++
+            ) {
+                const checkX = this.x + offsetX;
+                const checkY = this.y + offsetY;
+                const key = `${checkX},${checkY}`;
+                const signalValue =
+                    targetMap.has(key) && targetMap.get(key).v
+                        ? targetMap.get(key).v
                         : 0;
-                row.push(value);
+                row.push(signalValue);
             }
-            radar.push(row);
+            radarData.push(row);
         }
-        this.radar = radar;
-        console.log(this.radar);
+        this.radar = radarData;
     }
 
     radarDirectionFromCenter() {
-        let gradX = 0;
-        let gradY = 0;
-    
-        const center = Math.floor(this.radarDiamater / 2);
-    
-        for (let y = 0; y < this.radarDiamater; y++) {
-            for (let x = 0; x < this.radarDiamater; x++) {
-                const v = this.radar[y][x];
-                if (v === 0) continue; // skip if no signal
-    
-                // direction from center to this cell
-                const dx = x - center;
-                const dy = y - center; // In canvas, y increases downward
-    
-                // normalize direction (unit vector)
-                const length = Math.sqrt(dx * dx + dy * dy);
-                if (length === 0) continue; // skip the center itself
-    
-                const unitX = dx / length;
-                const unitY = dy / length;
-    
-                // weighted by signal value
-                gradX += unitX * v;
-                gradY += unitY * v;
+        const radar = this.radar;
+        const radarSize = this.radarDiameter;
+        const centerIndex = Math.floor(radarSize / 2);
+
+        // Determine the strongest signal in the radar to use as reference
+        let highestSignal = 0;
+        for (let row = 0; row < radarSize; row++) {
+            for (let col = 0; col < radarSize; col++) {
+                if (radar[row][col] > highestSignal) {
+                    highestSignal = radar[row][col];
+                }
             }
         }
-    
-        // Calculate angle with proper rotation for your system
-        // We want 0° at top, increasing clockwise (90° right, 180° down, 270° left)
-        const angleRad = Math.atan2(gradY, gradX);
-        
-        // Convert to degrees and rotate to make 0° point up
-        // atan2 returns -π to π, with 0 pointing right
-        // To make 0 point up: add 90° (to rotate counterclockwise), then normalize
-        const angleDeg = ((angleRad * 180 / Math.PI + 90) + 360) % 360;
-        
-        console.log("Direction to strongest signals:", angleDeg, "°");
+
+        if (highestSignal === 0) return null;
+
+        let weightedX = 0;
+        let weightedY = 0;
+
+        for (let row = 0; row < radarSize; row++) {
+            for (let col = 0; col < radarSize; col++) {
+                const signalStrength = radar[row][col];
+                if (
+                    signalStrength === 0 ||
+                    (col === centerIndex && row === centerIndex)
+                )
+                    continue;
+
+                if (signalStrength < highestSignal) {
+                    const deltaX = col - centerIndex;
+                    const deltaY = row - centerIndex;
+                    const distance = Math.sqrt(
+                        deltaX * deltaX + deltaY * deltaY
+                    );
+
+                    if (distance === 0) continue;
+
+                    const relativeStrength =
+                        (highestSignal - signalStrength) / highestSignal;
+                    const unitX = deltaX / distance;
+                    const unitY = deltaY / distance;
+
+                    weightedX += unitX * relativeStrength;
+                    weightedY += unitY * relativeStrength;
+                }
+            }
+        }
+
+        if (weightedX === 0 && weightedY === 0) return null;
+
+        const angleRadians = Math.atan2(weightedY, weightedX);
+        const angleDegrees = ((angleRadians * 180) / Math.PI + 90 + 360) % 360;
+
+        return angleDegrees;
+    }
+
+    aimTowardSignal() {
+        const targetAngle = this.radarDirectionFromCenter();
+
+        if (targetAngle === null || targetAngle === undefined) {
+            const randomRotation = Math.floor(Math.random() * 3) - 1;
+            this.rotate(randomRotation);
+            return;
+        }
+
+        const currentAngle = this.direction * 45;
+        let angleDifference = ((targetAngle - currentAngle + 540) % 360) - 180;
+
+        if (Math.abs(angleDifference) < 5) return;
+
+        const rotateStep = angleDifference > 0 ? 1 : -1;
+        this.rotate(rotateStep);
     }
 }
