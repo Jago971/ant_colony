@@ -2,11 +2,13 @@ export class Ant {
     constructor(x, y) {
         this.x = x;
         this.y = y;
-        this.direction = 6;
+        this.direction = 0;
         this.stepCount = 0;
-        this.radar = [];
-        this.radarDiameter = 11;
-        this.signalDirection = null;
+        this.goal = "food";
+        this.goalRadar = [];
+        this.returnRadar = [];
+        this.phase = "seeking";
+        this.radarSize = 11;
     }
 
     static directions = [
@@ -20,24 +22,14 @@ export class Ant {
         [-1, -1], // 7: up-left
     ];
 
-    draw(context, color = "black") {
-        context.fillStyle = color;
+    draw(context) {
+        context.fillStyle = "black";
         context.fillRect(this.x, this.y, 1, 1);
     }
 
     erase(context) {
         context.fillStyle = "white";
         context.fillRect(this.x, this.y, 1, 1);
-    }
-
-    trail(context, trailMap) {
-        const key = `${this.x},${this.y}`;
-        if (this.stepCount % 2 === 0) {
-            trailMap.set(key, { r: 255, g: 0, b: 0, v: 255 });
-            context.fillRect(this.x, this.y, 1, 1);
-        } else {
-            trailMap.set(key, { r: 255, g: 255, b: 255, v: 255 });
-        }
     }
 
     rotate(step = 1) {
@@ -51,103 +43,152 @@ export class Ant {
         this.y = Math.max(0, Math.min(gridHeight - 1, this.y + offsetY));
     }
 
-    radarMap(targetMap) {
-        const radarData = [];
-        const radarRadius = Math.floor(this.radarDiameter / 2);
+    trail(nestTrailMap, foodTrailMap) {
+        if (this.stepCount % 3 === 0) {
+            const key = `${this.x},${this.y}`;
 
-        for (let offsetY = -radarRadius; offsetY <= radarRadius; offsetY++) {
-            const row = [];
-            for (
-                let offsetX = -radarRadius;
-                offsetX <= radarRadius;
-                offsetX++
-            ) {
-                const checkX = this.x + offsetX;
-                const checkY = this.y + offsetY;
-                const key = `${checkX},${checkY}`;
-                const signalValue =
-                    targetMap.has(key) && targetMap.get(key).v
-                        ? targetMap.get(key).v
-                        : 0;
-                row.push(signalValue);
-            }
-            radarData.push(row);
+            const trailMap = this.phase === "seeking" ? nestTrailMap : foodTrailMap;
+            const color =
+                this.phase === "seeking"
+                    ? { r: 0, g: 0, b: 255 }
+                    : { r: 255, g: 0, b: 0 };
+
+            const current = trailMap.get(key) || {
+                r: 0,
+                g: 0,
+                b: 0,
+                strength: 0,
+            };
+
+            trailMap.set(key, {
+                ...color,
+                strength: current.strength + 255,
+            });
         }
-        this.radar = radarData;
     }
 
-    radarDirectionFromCenter() {
-        const radar = this.radar;
-        const radarSize = this.radarDiameter;
-        const centerIndex = Math.floor(radarSize / 2);
+    updateRadar(nestTrailMap, foodTrailMap) {
+        const radarRadius = Math.floor(this.radarSize / 2);
 
-        // Determine the strongest signal in the radar to use as reference
-        let highestSignal = 0;
-        for (let row = 0; row < radarSize; row++) {
-            for (let col = 0; col < radarSize; col++) {
-                if (radar[row][col] > highestSignal) {
-                    highestSignal = radar[row][col];
+        const createRadarSnapshot = (map) => {
+            const grid = [];
+            for (let dy = -radarRadius; dy <= radarRadius; dy++) {
+                const row = [];
+                for (let dx = -radarRadius; dx <= radarRadius; dx++) {
+                    const currentX = this.x + dx;
+                    const currentY = this.y + dy;
+                    const coordKey = `${currentX},${currentY}`;
+
+                    if (map.has(coordKey)) {
+                        row.push(map.get(coordKey).strength);
+                    } else {
+                        row.push(0);
+                    }
+                }
+                grid.push(row);
+            }
+            return grid;
+        };
+
+        this.returnRadar = createRadarSnapshot(nestTrailMap);
+        this.goalRadar = createRadarSnapshot(foodTrailMap);
+    }
+
+    getRadarSignalDirection(
+        directionBias = "towards",
+        signalType = "weakest",
+        trail = "goal"
+    ) {
+        const radar = trail === "return" ? this.returnRadar : this.goalRadar;
+        const radarRadius = Math.floor(this.radarSize / 2);
+        let signalStrength = signalType === "strongest" ? -Infinity : Infinity;
+        let targetX = 0;
+        let targetY = 0;
+
+        for (let y = 0; y < radar.length; y++) {
+            for (let x = 0; x < radar[y].length; x++) {
+                const cell = radar[y][x];
+
+                if (signalType === "strongest") {
+                    if (cell > signalStrength) {
+                        signalStrength = cell;
+                        targetX = x;
+                        targetY = y;
+                    }
+                } else if (signalType === "weakest") {
+                    if (cell > 0 && cell < signalStrength) {
+                        signalStrength = cell;
+                        targetX = x;
+                        targetY = y;
+                    }
                 }
             }
         }
 
-        if (highestSignal === 0) return null;
-
-        let weightedX = 0;
-        let weightedY = 0;
-
-        for (let row = 0; row < radarSize; row++) {
-            for (let col = 0; col < radarSize; col++) {
-                const signalStrength = radar[row][col];
-                if (
-                    signalStrength === 0 ||
-                    (col === centerIndex && row === centerIndex)
-                )
-                    continue;
-
-                if (signalStrength < highestSignal) {
-                    const deltaX = col - centerIndex;
-                    const deltaY = row - centerIndex;
-                    const distance = Math.sqrt(
-                        deltaX * deltaX + deltaY * deltaY
-                    );
-
-                    if (distance === 0) continue;
-
-                    const relativeStrength =
-                        (highestSignal - signalStrength) / highestSignal;
-                    const unitX = deltaX / distance;
-                    const unitY = deltaY / distance;
-
-                    weightedX += unitX * relativeStrength;
-                    weightedY += unitY * relativeStrength;
-                }
-            }
+        if (
+            signalStrength ===
+            (signalType === "strongest" ? -Infinity : Infinity)
+        ) {
+            return null; // No signal found
         }
 
-        if (weightedX === 0 && weightedY === 0) return null;
+        const dx = targetX - radarRadius;
+        const dy = targetY - radarRadius;
 
-        const angleRadians = Math.atan2(weightedY, weightedX);
-        const angleDegrees = ((angleRadians * 180) / Math.PI + 90 + 360) % 360;
+        if (targetX === radarRadius && targetY === radarRadius) {
+            return null;
+        }
 
-        return angleDegrees;
+        let angleRad = Math.atan2(dy, dx) + Math.PI / 2;
+
+        if (directionBias === "away") {
+            angleRad += Math.PI;
+        }
+        const angleDeg = ((angleRad * 180) / Math.PI + 360) % 360;
+
+        return this.angleToDirection(angleDeg);
     }
 
-    aimTowardSignal() {
-        const targetAngle = this.radarDirectionFromCenter();
+    angleToDirection(angleDeg) {
+        const normalized = (angleDeg + 360) % 360; // ensure 0–359
+        const direction = Math.round(normalized / 45) % 8;
 
-        if (targetAngle === null || targetAngle === undefined) {
-            const randomRotation = Math.floor(Math.random() * 3) - 1;
-            this.rotate(randomRotation);
-            return;
+        return direction;
+    }
+
+    getTurnStep(targetDirection) {
+        const current = this.direction;
+        let diff = (targetDirection - current + 8) % 8;
+
+        if (diff === 0) return 0;
+        if (diff <= 4) return 1;
+        return -1;
+    }
+
+    sense() {
+        const goalDirection = this.getRadarSignalDirection(
+            "towards",
+            "weakest",
+            this.phase === "seeking" ? "goal" : "return"
+        );
+
+        if (goalDirection !== null) {
+            const step = this.getTurnStep(goalDirection);
+            this.rotate(step);
+        } else {
+            const avoidReturnDirection = this.getRadarSignalDirection(
+                "away",
+                "strongest",
+                this.phase === "seeking" ? "return" : "goal"
+            );
+
+            if (avoidReturnDirection !== null) {
+                const step = this.getTurnStep(avoidReturnDirection);
+                this.rotate(step);
+            } else {
+                const randomStep = [-1, 0, 1][Math.floor(Math.random() * 3)];
+                this.rotate(randomStep);
+            }
         }
-
-        const currentAngle = this.direction * 45;
-        let angleDifference = ((targetAngle - currentAngle + 540) % 360) - 180;
-
-        if (Math.abs(angleDifference) < 5) return;
-
-        const rotateStep = angleDifference > 0 ? 1 : -1;
-        this.rotate(rotateStep);
     }
 }
