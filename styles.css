@@ -16,5 +16,4 @@ canvas {
     border: 1px solid black;
     image-rendering: pixelated;
     height: 100%;
-    aspect-ratio: 1 / 1;
 }

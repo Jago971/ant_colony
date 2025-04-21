@@ -8,7 +8,8 @@ export class Ant {
         this.goalRadar = [];
         this.returnRadar = [];
         this.phase = "seeking";
-        this.radarSize = 11;
+        this.radarSize = 31;
+        this.wallMemory = 0;
     }
 
     static directions = [
@@ -46,10 +47,12 @@ export class Ant {
     trail(nestTrailMap, foodTrailMap) {
         if (this.stepCount % 3 === 0) {
             const key = `${this.x},${this.y}`;
-
-            const trailMap = this.phase === "seeking" ? nestTrailMap : foodTrailMap;
+            const trailMap =
+                this.phase === "seeking" ? nestTrailMap : foodTrailMap;
             const color =
-                this.phase === "seeking"
+                this.wallMemory > 0
+                    ? { r: 255, g: 255, b: 0 }
+                    : this.phase === "seeking"
                     ? { r: 0, g: 0, b: 255 }
                     : { r: 255, g: 0, b: 0 };
 
@@ -62,7 +65,7 @@ export class Ant {
 
             trailMap.set(key, {
                 ...color,
-                strength: current.strength + 255,
+                strength: (current.strength = 1800),
             });
         }
     }
@@ -97,7 +100,8 @@ export class Ant {
     getRadarSignalDirection(
         directionBias = "towards",
         signalType = "weakest",
-        trail = "goal"
+        trail = "goal",
+        noise = 0
     ) {
         const radar = trail === "return" ? this.returnRadar : this.goalRadar;
         const radarRadius = Math.floor(this.radarSize / 2);
@@ -145,13 +149,16 @@ export class Ant {
             angleRad += Math.PI;
         }
         const angleDeg = ((angleRad * 180) / Math.PI + 360) % 360;
+        const range = noise * 180;
+        const offset = (Math.random() * 2 - 1) * range;
+        let noiseyAngle = (angleDeg + offset + 360) % 360;
 
-        return this.angleToDirection(angleDeg);
+        return this.angleToDirection(noiseyAngle);
     }
 
     angleToDirection(angleDeg) {
-        const normalized = (angleDeg + 360) % 360; // ensure 0–359
-        const direction = Math.round(normalized / 45) % 8;
+        const normalised = (angleDeg + 360) % 360; // ensure 0–359
+        const direction = Math.round(normalised / 45) % 8;
 
         return direction;
     }
@@ -165,11 +172,32 @@ export class Ant {
         return -1;
     }
 
-    sense() {
+    sense(home, food) {
+        const distance = (a, b) => {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        };
+
+        if (this.phase === "seeking") {
+            if (distance(this, food) <= 3) {
+                this.phase = "returning";
+            }
+        } else {
+            if (distance(this, home) <= 3) {
+                this.phase = "seeking";
+            }
+        }
+
+        if (this.wallMemory > 0) {
+            return; // Ignore sensing while avoiding wall
+        }
+
         const goalDirection = this.getRadarSignalDirection(
             "towards",
             "weakest",
-            this.phase === "seeking" ? "goal" : "return"
+            this.phase === "seeking" ? "goal" : "return",
+            0.25
         );
 
         if (goalDirection !== null) {
@@ -178,17 +206,63 @@ export class Ant {
         } else {
             const avoidReturnDirection = this.getRadarSignalDirection(
                 "away",
-                "strongest",
-                this.phase === "seeking" ? "return" : "goal"
+                "weakest",
+                this.phase === "seeking" ? "return" : "goal",
+                0.75
             );
 
             if (avoidReturnDirection !== null) {
                 const step = this.getTurnStep(avoidReturnDirection);
                 this.rotate(step);
             } else {
-                const randomStep = [-1, 0, 1][Math.floor(Math.random() * 3)];
+                const weight = 7;
+                const weightedSteps = [-1, 1, ...Array(weight).fill(0)];
+                const randomStep =
+                    weightedSteps[
+                        Math.floor(Math.random() * weightedSteps.length)
+                    ];
                 this.rotate(randomStep);
             }
+            // const weight = 7;
+            // const weightedSteps = [-1, 1, ...Array(weight).fill(0)];
+            // const randomStep =
+            //     weightedSteps[Math.floor(Math.random() * weightedSteps.length)];
+            // this.rotate(randomStep);
+            // console.log("random")
         }
+    }
+
+    directionAwayFromWall(gridWidth, gridHeight) {
+        let dirX = 0;
+        let dirY = 0;
+
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+
+                const currentX = this.x + dx;
+                const currentY = this.y + dy;
+
+                if (
+                    currentX < 0 ||
+                    currentX >= gridWidth ||
+                    currentY < 0 ||
+                    currentY >= gridHeight
+                ) {
+                    dirX -= dx;
+                    dirY -= dy;
+                }
+            }
+        }
+
+        if (dirX !== 0 || dirY !== 0) {
+            let angle = Math.atan2(-dirY, -dirX) * (180 / Math.PI) - 90;
+            angle = (angle + 360) % 360;
+            this.direction = this.angleToDirection(Math.round(angle));
+            this.wallMemory = 10;
+            return;
+        }
+
+        this.wallMemory = Math.max(0, this.wallMemory - 1);
     }
 }
