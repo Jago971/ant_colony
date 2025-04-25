@@ -3,7 +3,7 @@ export class Ant {
         this.x = x;
         this.y = y;
         this.stepCount = 0;
-        this.direction = 0;
+        this.direction = 7;
         this.underAnt = null;
         this.sensorDiameter = 7;
         this.action = "searching";
@@ -51,6 +51,7 @@ export class Ant {
     // #endregion ant movement
     // #region get-directions
     getTurnDirectionStep(targetDirection) {
+        if (targetDirection === null) return null;
         const current = this.direction;
         let diff = (targetDirection - current + 8) % 8;
 
@@ -119,6 +120,30 @@ export class Ant {
 
         return noisyAngle;
     }
+
+    getWeightedAverageAngle(anglesDeg, weights) {
+        const toRadians = (angle) => angle * (Math.PI / 180);
+        const toDegrees = (rad) => rad * (180 / Math.PI);
+
+        let sumX = 0;
+        let sumY = 0;
+
+        for (let i = 0; i < anglesDeg.length; i++) {
+            const angleRad = toRadians(anglesDeg[i]);
+            const weight = weights[i];
+            sumX += Math.cos(angleRad) * weight;
+            sumY += Math.sin(angleRad) * weight;
+        }
+
+        const avgAngleRad = Math.atan2(sumY, sumX);
+        let avgAngleDeg = toDegrees(avgAngleRad);
+
+        // Normalize to –180..180
+        if (avgAngleDeg > 180) avgAngleDeg -= 360;
+        if (avgAngleDeg < -180) avgAngleDeg += 360;
+
+        return avgAngleDeg;
+    }
     // #region ant actions
     checkNextToResource(nestTrailMap, foodTrailMap) {
         const resourceSignal =
@@ -167,7 +192,6 @@ export class Ant {
             });
         }
     }
-    // #endregion ant actions
 
     updateRadar(nestTrailMap, foodTrailMap) {
         const radarRadius = Math.floor(this.radarDiameter / 2);
@@ -196,49 +220,85 @@ export class Ant {
         this.returnRadar = getRadar(nestTrailMap);
         this.goalRadar = getRadar(foodTrailMap);
     }
+    // #endregion ant actions
 
     sensor(radar) {
-        const directionAngle = 2 * 45; // e.g. 3→135°
+        const directionAngle = 0 * 45; // e.g. 3 → 135°
         const sensorRange = 180;
-        const halfRange = sensorRange / 2; // ±90°
-        const leftSensor = [],
-            middleSensor = [],
-            rightSensor = [];
+        const halfRange = sensorRange / 2;
         const cx = Math.floor(this.radarDiameter / 2),
             cy = Math.floor(this.radarDiameter / 2);
 
+        // Create a filtered map of valid cells
+        const validCells = [];
+        let maxValue = 0;
+
+        // Single pass to create filtered map and find max value
         for (let y = 0; y < this.radarDiameter; y++) {
             for (let x = 0; x < this.radarDiameter; x++) {
                 const value = radar[y][x];
+
+                // Skip empty cells and center
                 if (value <= 0) continue;
+                if (x === cx && y === cy) continue;
 
                 const dx = x - cx,
                     dy = cy - y;
-                if (dx === 0 && dy === 0) continue;
 
-                // 1) rawAngle: 0=→,90=↑,180=←,270=↓
+                // Calculate absolute compass angle (0 = up/north, 90 = right/east)
                 let rawAngle = Math.atan2(dy, dx) * (180 / Math.PI);
                 if (rawAngle < 0) rawAngle += 360;
+                let compassAngle = (90 - rawAngle + 360) % 360;
 
-                // 2) rotate zero: 0=↑,90=→,180=↓,270=←
-                let angle = (90 - rawAngle + 360) % 360;
+                // Calculate relative angle to check if it's in field of view
+                let relativeAngle =
+                    ((compassAngle - directionAngle + 540) % 360) - 180;
 
-                // 3) relative to your facing dir, in –180..+180
-                let rel = ((angle - directionAngle + 540) % 360) - 180;
-
-                if (Math.abs(rel) <= halfRange) {
-                    if (Math.abs(rel) <= halfRange / 3) {
-                        middleSensor.push({ x, y, value, angle });
-                    } else if (rel < 0) {
-                        leftSensor.push({ x, y, value, angle });
-                    } else {
-                        rightSensor.push({ x, y, value, angle });
-                    }
+                // Only include angles within field of view (±90°)
+                if (Math.abs(relativeAngle) <= halfRange) {
+                    validCells.push({ compassAngle, value });
+                    maxValue = Math.max(maxValue, value);
                 }
             }
         }
 
-        console.log("L:", leftSensor, "M:", middleSensor, "R:", rightSensor);
+        // If no valid cells, return null
+        if (validCells.length === 0) {
+            return null;
+        }
+
+        // Find cells with maximum value
+        const maxCells = validCells.filter((cell) => cell.value === maxValue);
+
+        // If only one max cell, return its compass angle
+        if (maxCells.length === 1) {
+            return Math.round(maxCells[0].compassAngle);
+        }
+
+        // Calculate average compass angle for multiple max cells
+        let sumSin = 0;
+        let sumCos = 0;
+        for (const cell of maxCells) {
+            const rad = cell.compassAngle * (Math.PI / 180);
+            sumSin += Math.sin(rad);
+            sumCos += Math.cos(rad);
+        }
+        let avgAngle = Math.atan2(sumSin, sumCos) * (180 / Math.PI);
+        if (avgAngle < 0) avgAngle += 360;
+
+        return Math.round(avgAngle);
+    }
+
+    brain() {
+        if (this.wallMemory > 0) {
+            return;
+        }
+        console.log(this.direction, this.convertAngleToDirection(this.sensor(this.goalRadar)))
+        console.log(
+            this.getTurnDirectionStep(
+                this.convertAngleToDirection(this.sensor(this.goalRadar))
+            )
+        );
     }
 }
 
