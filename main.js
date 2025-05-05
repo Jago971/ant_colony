@@ -1,4 +1,4 @@
-import { Ant } from "./ant.js";
+
 
 const canvas = document.getElementById("antCanvas");
 const ctx = canvas.getContext("2d", { willReadFrequently: true });

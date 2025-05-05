@@ -1,4 +1,4 @@
-export class Ant {
+class Ant {
     constructor(x, y, maxTrailStrength) {
         this.x = x;
         this.y = y;
@@ -52,6 +52,7 @@ export class Ant {
     // #region get-directions
     getTurnDirectionStep(targetDirection) {
         if (targetDirection === null) return null;
+
         const current = this.direction;
         let diff = (targetDirection - current + 8) % 8;
 
