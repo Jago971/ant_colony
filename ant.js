@@ -1,525 +1,441 @@
-class Ant {
-    constructor(x, y, maxTrailStrength) {
-        this.x = x;
-        this.y = y;
-        this.stepCount = 0;
-        this.direction = 7;
-        this.underAnt = null;
-        this.sensorDiameter = 7;
-        this.action = "searching";
-        this.wallMemory = 0;
-        this.goalRadar = null;
-        this.returnRadar = null;
-        this.radarDiameter = 15;
-        this.maxTrailStrength = maxTrailStrength;
-    }
+export class Ant {
+  constructor(x, y, gridWidth, gridHeight) {
+    this.x = x;
+    this.y = y;
+    this.direction = 7;
+    this.stepCount = 0;
 
-    static directions = [
-        [0, -1], // 0: up
-        [1, -1], // 1: up-right
-        [1, 0], // 2: right
-        [1, 1], // 3: down-right
-        [0, 1], // 4: down
-        [-1, 1], // 5: down-left
-        [-1, 0], // 6: left
-        [-1, -1], // 7: up-left
-    ];
-    // #region ant graphics
-    eraseAnt(ctx) {
-        if (this.underAnt) {
-            ctx.putImageData(this.underAnt, this.x, this.y);
+    this.background = null;
+
+    this.gridWidth = gridWidth;
+    this.gridHeight = gridHeight;
+
+    this.action = "searching";
+    this.maxPheromoneStrength = 10;
+    this.radarDiameter = 21;
+    this.viewRange = 90;
+    this.resourceRadar = [];
+    this.goalRadar = [];
+    this.returnRadar = [];
+  }
+
+  directions = [
+    [0, -1], // 0: up
+    [1, -1], // 1: up-right
+    [1, 0], // 2: right
+    [1, 1], // 3: down-right
+    [0, 1], // 4: down
+    [-1, 1], // 5: down-left
+    [-1, 0], // 6: left
+    [-1, -1], // 7: up-left
+  ];
+
+  eraseAnt(ctx) {
+    ctx.clearRect(this.x, this.y, 1, 1);
+  }
+
+  drawAnt(ctx) {
+    ctx.fillStyle = "black";
+    ctx.fillRect(this.x, this.y, 1, 1);
+  }
+
+  rotateAnt(step = 1) {
+    this.direction = (this.direction + step + 8) % 8;
+  }
+
+  moveAnt(resourceMap) {
+    this.stepCount++;
+    const [offsetX, offsetY] = this.directions[this.direction];
+
+    const newX = this.x + offsetX;
+    const newY = this.y + offsetY;
+
+    // Check grid boundaries
+    if (
+      newX >= 0 &&
+      newX < this.gridWidth &&
+      newY >= 0 &&
+      newY < this.gridHeight
+    ) {
+      const key = `${newX},${newY}`;
+
+      // Block movement if the tile exists in the resource map
+      if (!resourceMap.has(key)) {
+        this.x = newX;
+        this.y = newY;
+      }
+    }
+  }
+
+  mapPheromones(homePheromoneMap, foodPheromoneMap, resourceMap) {
+    const pheromoneMap =
+      this.action === "searching" ? homePheromoneMap : foodPheromoneMap;
+
+    if (this.stepCount % 3 !== 0) return;
+
+    const key = `${this.x},${this.y}`;
+
+    if (resourceMap.has(key)) return;
+
+    const color =
+      this.action === "searching"
+        ? { r: 0, g: 0, b: 255 }
+        : { r: 255, g: 0, b: 0 };
+
+    pheromoneMap.set(key, {
+      type: "pheromone",
+      strength: this.maxPheromoneStrength,
+      ...color,
+    });
+  }
+
+  updatePheromoneRadar(homePheromoneMap, foodPheromoneMap) {
+    const radarRadius = Math.floor(this.radarDiameter / 2);
+
+    const getRadar = (map) => {
+      const grid = [];
+      for (let dy = -radarRadius; dy <= radarRadius; dy++) {
+        const row = [];
+        for (let dx = -radarRadius; dx <= radarRadius; dx++) {
+          const x = this.x + dx;
+          const y = this.y + dy;
+          const key = `${x},${y}`;
+          const strength = map.get(key)?.strength || 0;
+          row.push(strength);
         }
-    }
+        grid.push(row);
+      }
+      return grid;
+    };
 
-    drawAnt(ctx) {
-        this.underAnt = ctx.getImageData(this.x, this.y, 1, 1);
-        ctx.fillStyle = "black";
-        ctx.fillRect(this.x, this.y, 1, 1);
-    }
-    // #endregion ant graphics
-    // #region ant movement
-    rotateAnt(step = 1) {
-        this.direction = (this.direction + step + 8) % 8;
-    }
+    this.goalRadar = getRadar(foodPheromoneMap);
+    this.returnRadar = getRadar(homePheromoneMap);
+  }
 
-    moveAnt(gridWidth, gridHeight) {
-        this.stepCount++;
-        const [offsetX, offsetY] = Ant.directions[this.direction];
-        this.x = Math.max(0, Math.min(gridWidth - 1, this.x + offsetX));
-        this.y = Math.max(0, Math.min(gridHeight - 1, this.y + offsetY));
-    }
-    // #endregion ant movement
-    // #region get-directions
-    getTurnDirectionStep(targetDirection) {
-        if (targetDirection === null) return null;
+  updateResourceRadar(resourceMap) {
+    const radarRadius = Math.floor(this.radarDiameter / 2);
+    const targetType = this.action === "searching" ? "food" : "home";
 
-        const current = this.direction;
-        let diff = (targetDirection - current + 8) % 8;
-
-        if (diff === 0) return 0;
-        if (diff <= 4) return 1;
-        return -1;
-    }
-
-    getOppositeDirection(direction) {
-        if (direction === null) return null;
-        return (direction + 4) % 8;
-    }
-
-    getDirectionAwayFromWall(gridWidth, gridHeight) {
-        let dirX = 0;
-        let dirY = 0;
-
-        for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-                if (dx === 0 && dy === 0) continue;
-
-                const currentX = this.x + dx;
-                const currentY = this.y + dy;
-
-                if (
-                    currentX < 0 ||
-                    currentX >= gridWidth ||
-                    currentY < 0 ||
-                    currentY >= gridHeight
-                ) {
-                    dirX -= dx;
-                    dirY -= dy;
-                }
-            }
+    const getRadar = (map, type) => {
+      const grid = [];
+      for (let dy = -radarRadius; dy <= radarRadius; dy++) {
+        const row = [];
+        for (let dx = -radarRadius; dx <= radarRadius; dx++) {
+          const x = this.x + dx;
+          const y = this.y + dy;
+          const key = `${x},${y}`;
+          const match = map.get(key)?.type === type ? 1 : 0;
+          row.push(match);
         }
+        grid.push(row);
+      }
+      return grid;
+    };
 
-        if (dirX !== 0 || dirY !== 0) {
-            let angle = Math.atan2(-dirY, -dirX) * (180 / Math.PI) - 90;
-            angle = (angle + 360) % 360;
-            this.direction = this.convertAngleToDirection(Math.round(angle));
-            this.wallMemory = 1;
-            return;
-        }
+    this.resourceRadar = getRadar(resourceMap, targetType);
+  }
 
-        this.wallMemory = Math.max(0, this.wallMemory - 1);
-    }
-    // #region utils
-    convertAngleToDirection(angleDeg) {
-        if (angleDeg === null) return null;
-        const normalised = (angleDeg + 360) % 360; // ensure 0–359
-        const direction = Math.round(normalised / 45) % 8;
+  getAngle(dx, dy) {
+    // TESTED
+    let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    angle = (angle + 90) % 360;
+    if (angle < 0) angle += 360;
+    return angle;
+  }
 
-        return direction;
-    }
+  getView(angleRange, direction, radar) {
+    const directionAngle = direction * 45;
+    const lowerBoundary =
+      directionAngle - angleRange / 2 < 0
+        ? directionAngle - angleRange / 2 + 360
+        : directionAngle - angleRange / 2;
+    const upperBoundary =
+      directionAngle + angleRange / 2 > 360
+        ? (directionAngle + angleRange / 2) % 360
+        : directionAngle + angleRange / 2;
 
-    addNoise(percentRange, angle) {
-        // 13% of 360 = 46.8. So 13 and over introduces differing direction(45 degree segments)
-        if (angle === null) return null;
-        const range = (360 * percentRange) / 100;
-        const halfRange = range / 2;
-        const min = angle - halfRange;
-        const max = angle + halfRange;
+    let result = [];
 
-        let noisyAngle = Math.random() * (max - min) + min;
-        noisyAngle = (noisyAngle + 360) % 360; // Keep result within 0–359
+    const centerX = Math.floor(radar[0].length / 2);
+    const centerY = Math.floor(radar.length / 2);
 
-        return noisyAngle;
-    }
+    for (let y = 0; y < radar.length; y++) {
+      for (let x = 0; x < radar[y].length; x++) {
+        if (x === centerX && y === centerY) continue;
+        const value = radar[y][x];
+        if (value > 0) {
+          const dx = x - centerX;
+          const dy = y - centerY;
 
-    getWeightedAverageAngle(anglesDeg, weights) {
-        const toRadians = (angle) => angle * (Math.PI / 180);
-        const toDegrees = (rad) => rad * (180 / Math.PI);
+          const angle = this.getAngle(dx, dy);
 
-        let sumX = 0;
-        let sumY = 0;
-
-        for (let i = 0; i < anglesDeg.length; i++) {
-            const angleRad = toRadians(anglesDeg[i]);
-            const weight = weights[i];
-            sumX += Math.cos(angleRad) * weight;
-            sumY += Math.sin(angleRad) * weight;
-        }
-
-        const avgAngleRad = Math.atan2(sumY, sumX);
-        let avgAngleDeg = toDegrees(avgAngleRad);
-
-        // Normalize to –180..180
-        if (avgAngleDeg > 180) avgAngleDeg -= 360;
-        if (avgAngleDeg < -180) avgAngleDeg += 360;
-
-        return avgAngleDeg;
-    }
-    // #region ant actions
-    checkNextToResource(nestTrailMap, foodTrailMap) {
-        const resourceSignal =
-            this.action === "searching" ? this.foodCode : this.homeCode;
-        const resourceRadar =
-            this.action === "searching" ? foodTrailMap : nestTrailMap;
-
-        for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-                const currentX = this.x + dx;
-                const currentY = this.y + dy;
-                const coordKey = `${currentX},${currentY}`;
-
-                if (resourceRadar.has(coordKey)) {
-                    if (
-                        resourceRadar.get(coordKey).strength === resourceSignal
-                    ) {
-                        // Switch the action based on the current action
-                        this.action =
-                            this.action === "searching"
-                                ? "returning"
-                                : "searching";
-                        break; // Stop checking once we contact a resource
-                    }
-                }
-            }
-        }
-    }
-
-    createTrail(nestTrailMap, foodTrailMap) {
-        if (this.stepCount % 3 === 0) {
-            const trailMap =
-                this.action === "searching" ? nestTrailMap : foodTrailMap;
-
-            const key = `${this.x},${this.y}`;
-            const color =
-                this.wallMemory > 0
-                    ? { r: 255, g: 255, b: 0 }
-                    : this.action === "searching"
-                    ? { r: 0, g: 0, b: 255 }
-                    : { r: 255, g: 0, b: 0 };
-
-            trailMap.set(key, {
-                ...color,
-                strength: this.maxTrailStrength,
+          if (
+            (angle >= lowerBoundary && angle <= upperBoundary) ||
+            (lowerBoundary > upperBoundary &&
+              (angle >= lowerBoundary || angle <= upperBoundary))
+          ) {
+            result.push({
+              value,
+              angle,
             });
+          }
         }
+      }
+    }
+    return result;
+  }
+
+  evaluateDirection(radar) {
+    const view = this.getView(90, this.direction, radar);
+    const sectors = { "-1": [], 0: [], 1: [] };
+    const directionDegrees = this.direction * 45;
+
+    for (let { angle, value } of view) {
+      let relativeAngle = (angle - directionDegrees + 360) % 360;
+      if (relativeAngle > 180) relativeAngle -= 360;
+
+      if (relativeAngle >= -45 && relativeAngle < -15) {
+        sectors["-1"].push({ value, angle });
+      } else if (relativeAngle >= -15 && relativeAngle <= 15) {
+        sectors["0"].push({ value, angle });
+      } else if (relativeAngle > 15 && relativeAngle <= 45) {
+        sectors["1"].push({ value, angle });
+      }
     }
 
-    updateRadar(nestTrailMap, foodTrailMap) {
-        const radarRadius = Math.floor(this.radarDiameter / 2);
+    const scoreSector = (sector) => {
+      if (sector.length === 0) return 0;
+      const strengthSum = sector.reduce((sum, { value }) => sum + value, 0);
+      const count = sector.length;
+      // Weight concentration higher than strength
+      return strengthSum * 0.5 + count * 1;
+    };
 
-        const getRadar = (map) => {
-            const grid = [];
-            for (let dy = -radarRadius; dy <= radarRadius; dy++) {
-                const row = [];
-                for (let dx = -radarRadius; dx <= radarRadius; dx++) {
-                    const currentX = this.x + dx;
-                    const currentY = this.y + dy;
-                    const coordKey = `${currentX},${currentY}`;
+    const scores = {
+      "-1": scoreSector(sectors["-1"]),
+      0: scoreSector(sectors["0"]),
+      1: scoreSector(sectors["1"]),
+    };
 
-                    if (map.has(coordKey)) {
-                        const strength = map.get(coordKey).strength;
-                        row.push(strength);
-                    } else {
-                        row.push(0);
-                    }
-                }
-                grid.push(row);
-            }
-            return grid;
-        };
+    const best = Object.entries(scores).reduce(
+      (a, b) => (b[1] > a[1] ? b : a),
+      ["0", 0]
+    );
+    const rotateStep = parseInt(best[0]);
 
-        this.returnRadar = getRadar(nestTrailMap);
-        this.goalRadar = getRadar(foodTrailMap);
-    }
-    // #endregion ant actions
-
-    sensor(radar) {
-        const directionAngle = 0 * 45; // e.g. 3 → 135°
-        const sensorRange = 180;
-        const halfRange = sensorRange / 2;
-        const cx = Math.floor(this.radarDiameter / 2),
-            cy = Math.floor(this.radarDiameter / 2);
-
-        // Create a filtered map of valid cells
-        const validCells = [];
-        let maxValue = 0;
-
-        // Single pass to create filtered map and find max value
-        for (let y = 0; y < this.radarDiameter; y++) {
-            for (let x = 0; x < this.radarDiameter; x++) {
-                const value = radar[y][x];
-
-                // Skip empty cells and center
-                if (value <= 0) continue;
-                if (x === cx && y === cy) continue;
-
-                const dx = x - cx,
-                    dy = cy - y;
-
-                // Calculate absolute compass angle (0 = up/north, 90 = right/east)
-                let rawAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-                if (rawAngle < 0) rawAngle += 360;
-                let compassAngle = (90 - rawAngle + 360) % 360;
-
-                // Calculate relative angle to check if it's in field of view
-                let relativeAngle =
-                    ((compassAngle - directionAngle + 540) % 360) - 180;
-
-                // Only include angles within field of view (±90°)
-                if (Math.abs(relativeAngle) <= halfRange) {
-                    validCells.push({ compassAngle, value });
-                    maxValue = Math.max(maxValue, value);
-                }
-            }
-        }
-
-        // If no valid cells, return null
-        if (validCells.length === 0) {
-            return null;
-        }
-
-        // Find cells with maximum value
-        const maxCells = validCells.filter((cell) => cell.value === maxValue);
-
-        // If only one max cell, return its compass angle
-        if (maxCells.length === 1) {
-            return Math.round(maxCells[0].compassAngle);
-        }
-
-        // Calculate average compass angle for multiple max cells
-        let sumSin = 0;
-        let sumCos = 0;
-        for (const cell of maxCells) {
-            const rad = cell.compassAngle * (Math.PI / 180);
-            sumSin += Math.sin(rad);
-            sumCos += Math.cos(rad);
-        }
-        let avgAngle = Math.atan2(sumSin, sumCos) * (180 / Math.PI);
-        if (avgAngle < 0) avgAngle += 360;
-
-        return Math.round(avgAngle);
+    if (best[1] === 0) {
+      return null;
     }
 
-    brain() {
-        if (this.wallMemory > 0) {
-            return;
-        }
-        console.log(this.direction, this.convertAngleToDirection(this.sensor(this.goalRadar)))
-        console.log(
-            this.getTurnDirectionStep(
-                this.convertAngleToDirection(this.sensor(this.goalRadar))
-            )
-        );
+    let newDirection = (this.direction + rotateStep + 8) % 8;
+    return newDirection;
+  }
+
+  addNoise( likelyNoChange = 1, direction) {
+    likelyNoChange = Math.max(0, likelyNoChange);
+
+    const totalWeight = likelyNoChange + 2;
+    const probNoChange = likelyNoChange / totalWeight;
+    const rand = Math.random();
+
+    let change;
+    if (rand < probNoChange) {
+      change = 0;
+    } else if (rand < probNoChange + 1 / totalWeight) {
+      change = -1;
+    } else {
+      change = 1;
     }
+
+    return (direction + change + 8) % 8;
+  }
+
+  getStrongestPheromone(direction, radar) {
+    const view = this.getView(this.viewRange, direction, radar);
+    let strongestPheromone = 0;
+    let results = [];
+
+    view.forEach((obj) => {
+      if (obj.value > strongestPheromone) {
+        strongestPheromone = obj.value;
+      }
+    });
+
+    if (strongestPheromone === 0) return null;
+
+    view.forEach((obj) => {
+      if (obj.value === strongestPheromone) {
+        results.push(obj.angle);
+      }
+    });
+    return results;
+  }
+
+  getWeakestPheromone(direction, radar) {
+    const view = this.getView(this.viewRange, direction, radar);
+    let weakestSignal = Infinity;
+    let results = [];
+
+    view.forEach((obj) => {
+      if (obj.value < weakestSignal) {
+        weakestSignal = obj.value;
+      }
+    });
+
+    if (weakestSignal === Infinity) return null;
+
+    view.forEach((obj) => {
+      if (obj.value === weakestSignal) {
+        results.push(obj.angle);
+      }
+    });
+    return results;
+  }
+
+  getPheromoneDirection(direction, radar, mode = "weakest") {
+    const pheromoneAngles =
+      mode === "weakest"
+        ? this.getWeakestPheromone(direction, radar)
+        : this.getStrongestPheromone(direction, radar);
+    if (pheromoneAngles === null) return null;
+
+    // If no angles, return the original direction
+    if (pheromoneAngles.length === 0) {
+      return direction;
+    }
+
+    // If only one angle, use it directly
+    if (pheromoneAngles.length === 1) {
+      return Math.floor((pheromoneAngles[0] / 45) % 8);
+    }
+
+    // For multiple angles, use vector addition for proper circular averaging
+    let sumX = 0;
+    let sumY = 0;
+
+    pheromoneAngles.forEach((angle) => {
+      // Convert angle to radians
+      const radians = angle * (Math.PI / 180);
+      // Add vector components
+      sumX += Math.cos(radians);
+      sumY += Math.sin(radians);
+    });
+
+    // Convert back to angle in degrees
+    let finalAngle = Math.atan2(sumY, sumX) * (180 / Math.PI);
+    // Normalize to 0-360 range
+    if (finalAngle < 0) finalAngle += 360;
+
+    // Convert to direction (0-7)
+    return Math.floor((finalAngle / 45) % 8);
+  }
+
+  getRandomDirection(direction, weight) {
+    const directions = [
+      (direction - 1 + 8) % 8,
+      direction,
+      (direction + 1) % 8,
+    ];
+
+    const randomValue = Math.random() * (2 + weight);
+
+    return randomValue < weight
+      ? directions[1]
+      : randomValue < 2 + weight - 1
+      ? directions[0]
+      : directions[2];
+  }
+
+  sense() {
+    const currentRadar =
+      this.action === "searching" ? this.goalRadar : this.returnRadar;
+
+    const resourceDirection = this.evaluateDirection(this.resourceRadar);
+    const pheromoneDirection = this.evaluateDirection(currentRadar);
+    const randomDirection = this.getRandomDirection(this.direction, 25);
+
+    if (resourceDirection !== null) {
+      this.direction = resourceDirection;
+    } else if (pheromoneDirection !== null) {
+      this.direction = pheromoneDirection;
+    } else {
+      this.direction = randomDirection;
+    }
+  }
+
+  collectResource(resourceMap, ctx) {
+    const directions = [
+      [-1, -1],
+      [-1, 0],
+      [-1, 1],
+      [0, -1],
+      [0, 1],
+      [1, -1],
+      [1, 0],
+      [1, 1],
+    ];
+
+    for (const [dx, dy] of directions) {
+      const checkX = this.x + dx;
+      const checkY = this.y + dy;
+      const key = `${checkX},${checkY}`;
+
+      if (resourceMap.has(key)) {
+        const resourceType = resourceMap.get(key).type;
+
+        if (resourceType === "food" && this.action === "searching") {
+          resourceMap.delete(key);
+          ctx.clearRect(checkX, checkY, 1, 1);
+          this.action = "returning";
+          this.direction = this.getOppositeDirection(this.direction);
+
+          return;
+        } else if (resourceType === "home" && this.action === "returning") {
+          this.action = "searching";
+          this.direction = this.getOppositeDirection(this.direction);
+          return;
+        }
+      }
+    }
+  }
+
+  getOppositeDirection(direction) {
+    return (direction + 4) % 8;
+  }
+
+  moveAwayFromWall(gridWidth, gridHeight) {
+    let dirX = 0;
+    let dirY = 0;
+
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+
+        const currentX = this.x + dx;
+        const currentY = this.y + dy;
+
+        if (
+          currentX < 0 ||
+          currentX >= gridWidth ||
+          currentY < 0 ||
+          currentY >= gridHeight
+        ) {
+          this.direction = this.getOppositeDirection(this.direction);
+        }
+      }
+    }
+  }
+
+  updatePheromone(homePheromoneMap, foodPheromoneMap, mode = "increase") {
+    const reducingMap =
+      this.action === "searching" ? foodPheromoneMap : homePheromoneMap;
+    const key = `${this.x},${this.y}`;
+
+    if (reducingMap.has(key)) {
+      const pheromone = reducingMap.get(key);
+      pheromone.strength =
+        mode === "increase" ? pheromone.strength + 1 : pheromone.strength - 1;
+      reducingMap.set(key, pheromone);
+    }
+  }
 }
-
-// export class Ant {
-
-//     averageTwoAngles(angle1, angle2) {
-
-//         if(angle1 === null && angle2 === null) return null
-//         // Convert both to radians
-//         const rad1 = (angle1 * Math.PI) / 180;
-//         const rad2 = (angle2 * Math.PI) / 180;
-
-//         // Convert to unit vectors and sum
-//         const x = Math.cos(rad1) + Math.cos(rad2);
-//         const y = Math.sin(rad1) + Math.sin(rad2);
-
-//         // Average direction from summed vector
-//         const avgRad = Math.atan2(y, x);
-//         const avgDeg = ((avgRad * 180) / Math.PI + 360) % 360;
-
-//         return avgDeg;
-//     }
-//     // #endregion utils
-
-//     findDirection(radar) {
-//         const radarSize = radar.length;
-//         const center = {
-//             i: Math.floor(radarSize / 2),
-//             j: Math.floor(radarSize / 2),
-//         };
-
-//         let smallestValue = Infinity;
-//         let positions = [];
-
-//         // Step 1: Find the smallest non-zero value in the grid
-//         for (let i = 0; i < radarSize; i++) {
-//             for (let j = 0; j < radarSize; j++) {
-//                 const value = radar[i][j];
-
-//                 if (value > 0 && value < smallestValue) {
-//                     smallestValue = value;
-//                 }
-//             }
-//         }
-
-//         // Step 2: Find all positions that have the smallest value
-//         for (let i = 0; i < radarSize; i++) {
-//             for (let j = 0; j < radarSize; j++) {
-//                 const value = radar[i][j];
-
-//                 // Only push positions with the smallest value
-//                 if (value === smallestValue) {
-//                     positions.push({ i, j });
-//                 }
-//             }
-//         }
-
-//         if (positions.length === 0) {
-//             return null; // or any fallback
-//         }
-
-//         let totalAngle = 0;
-
-//         positions.forEach((pos) => {
-//             const deltaY = pos.i - center.i;
-//             const deltaX = pos.j - center.j;
-
-//             // Calculate angle using atan2 and convert to degrees
-//             let angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
-
-//             // Adjust the angle by adding 90 degrees to rotate the system
-//             angle += 90;
-
-//             // Ensure the angle stays within the range of 0 to 360 degrees
-//             if (angle < 0) angle += 360; // if negative, adjust by adding 360 degrees
-//             if (angle >= 360) angle -= 360; // if >= 360, subtract 360 to bring it within range
-
-//             totalAngle += angle;
-//         });
-
-//         // Average the angle for multiple smallest values
-//         const averageAngle = totalAngle / positions.length;
-
-//         return averageAngle;
-//     }
-
-//     sense() {
-//         if (this.wallMemory > 0) {
-//             return;
-//         }
-
-//         const primaryRadar =
-//             this.action === "seeking" ? this.goalRadar : this.returnRadar;
-//         const secondaryRadar =
-//             this.action === "seeking" ? this.returnRadar : this.goalRadar;
-
-//         const primaryDirection = this.convertAngleToDirection(
-//             this.addNoise(
-//                 15,
-//                 this.averageTwoAngles(this.findDirection(primaryRadar), this.calculateWeightedAngleFromCenter(primaryRadar))
-//                 // this.findDirection(primaryRadar)
-//             )
-//         );
-//         console.log(this.findDirection(primaryRadar), this.calculateWeightedAngleFromCenter(primaryRadar), this.averageTwoAngles(this.findDirection(primaryRadar), this.calculateWeightedAngleFromCenter(primaryRadar)))
-
-//         if (primaryDirection !== null) {
-//             const step = this.getTurnStep(primaryDirection);
-//             this.rotateAnt(step);
-//         } else {
-//             const awayFromSecondaryDirection = this.getOppositeDirection(
-//                 this.convertAngleToDirection(
-//                     this.addNoise(
-//                         30,
-//                         this.calculateWeightedAngleFromCenter(secondaryRadar)
-//                     )
-//                 )
-//             );
-
-//             if (awayFromSecondaryDirection !== null) {
-//                 const step = this.getTurnStep(awayFromSecondaryDirection);
-//                 this.rotateAnt(step);
-//             } else {
-//                 const weight = 7;
-//                 const weightedSteps = [-1, 1, ...Array(weight).fill(0)];
-//                 const randomStep =
-//                     weightedSteps[
-//                         Math.floor(Math.random() * weightedSteps.length)
-//                     ];
-//                 this.rotateAnt(randomStep);
-//             }
-//         }
-
-//         // const primaryRadar =
-//         //     this.action === "seeking" ? this.goalRadar : this.returnRadar;
-//         // const secondaryRadar =
-//         //     this.action === "seeking" ? this.returnRadar : this.goalRadar;
-
-//         // const primaryDirection = this.convertAngleToDirection(
-//         //     this.addNoise(15, this.findDirection(primaryRadar))
-//         // );
-
-//         // if (primaryDirection !== null) {
-//         //     const step = this.getTurnStep(primaryDirection);
-//         //     this.rotateAnt(step);
-//         // } else {
-//         //     const awayFromSecondaryDirection = this.getOppositeDirection(
-//         //         this.convertAngleToDirection(
-//         //             this.addNoise(50, this.findDirection(secondaryRadar))
-//         //         )
-//         //     );
-
-//         //     if (awayFromSecondaryDirection !== null) {
-//         //         const step = this.getTurnStep(awayFromSecondaryDirection);
-//         //         this.rotateAnt(step);
-//         //     } else {
-//         //         const weight = 7;
-//         //         const weightedSteps = [-1, 1, ...Array(weight).fill(0)];
-//         //         const randomStep =
-//         //             weightedSteps[
-//         //                 Math.floor(Math.random() * weightedSteps.length)
-//         //             ];
-//         //         this.rotateAnt(randomStep);
-//         //     }
-//         // }
-//     }
-
-//     calculateWeightedAngleFromCenter(grid) {
-//         const rows = grid.length;
-//         if (rows === 0) return null;
-
-//         const cols = grid[0].length;
-//         if (rows !== cols) {
-//             throw new Error("Grid must be square");
-//         }
-
-//         // Find the center coordinates
-//         const centerY = Math.floor(rows / 2);
-//         const centerX = Math.floor(cols / 2);
-
-//         let totalWeight = 0;
-//         let weightedSumSin = 0;
-//         let weightedSumCos = 0;
-
-//         // Process each cell in the grid
-//         for (let y = 0; y < rows; y++) {
-//             for (let x = 0; x < cols; x++) {
-//                 // Skip the center point
-//                 if (x === centerX && y === centerY) continue;
-
-//                 const value = grid[y][x];
-
-//                 // Skip if value is 0 or negative
-//                 if (value <= 0) continue;
-
-//                 // Calculate displacement from center
-//                 const dx = x - centerX;
-//                 const dy = centerY - y; // Flip y since grid indices increase downward
-
-//                 // Calculate angle for this point (0° is up)
-//                 const angle = Math.atan2(dx, dy);
-
-//                 // Add weighted contribution of angle
-//                 weightedSumSin += Math.sin(angle) * value;
-//                 weightedSumCos += Math.cos(angle) * value;
-//                 totalWeight += value;
-//             }
-//         }
-
-//         // Return null if no positive values were found (except possibly at center)
-//         if (totalWeight === 0) return null;
-
-//         // Calculate the average angle using the weighted sums
-//         let avgAngle = Math.atan2(weightedSumSin, weightedSumCos);
-
-//         // Convert to degrees and normalize to 0-360 range
-//         let angleDeg = avgAngle * (180 / Math.PI);
-//         if (angleDeg < 0) {
-//             angleDeg += 360;
-//         }
-
-//         return Math.round(angleDeg);
-//     }
-// }
