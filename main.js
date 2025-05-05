@@ -2,11 +2,11 @@ import { Ant } from "./ant.js";
 
 const canvas = document.getElementById("antCanvas");
 const ctx = canvas.getContext("2d", { willReadFrequently: true });
-const gridWidth = 200;
-const gridHeight = 200;
+const gridWidth = 300;
+const gridHeight = 300;
 
 let running = false;
-const loopSpeed = 25;
+const loopSpeed = 20;
 
 const colony = [];
 
@@ -18,13 +18,30 @@ const home = {
   color: "green",
 };
 
-const food = {
+const food1 = {
   x: 20,
   y: 20,
   type: "food",
-  width: 15,
+  width: 25,
   color: "orange",
 };
+
+const food2 = {
+  x: gridWidth - 20,
+  y: 20,
+  type: "food",
+  width: 25,
+  color: "orange",
+};
+
+const food3 = {
+  x: 20,
+  y: gridHeight - 20,
+  type: "food",
+  width: 25,
+  color: "orange",
+};
+
 
 const homePheromoneMap = new Map();
 const foodPheromoneMap = new Map();
@@ -130,8 +147,8 @@ function drawPheromones(ctx, foodPheromoneMap, homePheromoneMap) {
 window.addEventListener("click", () => {
   if (!running) {
     running = true;
-    initialiseResources(ctx, [food, home]);
-    initialiseColony(10);
+    initialiseResources(ctx, [food1, food2, food3, home]);
+    initialiseColony(150);
 
     setInterval(() => {
       updatePheromones(ctx, homePheromoneMap);

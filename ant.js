@@ -71,7 +71,7 @@ export class Ant {
     const pheromoneMap =
       this.action === "searching" ? homePheromoneMap : foodPheromoneMap;
 
-    if (this.stepCount % 3 !== 0) return;
+    if (this.stepCount % 5 !== 0) return;
 
     const key = `${this.x},${this.y}`;
 
@@ -82,11 +82,13 @@ export class Ant {
         ? { r: 0, g: 0, b: 255 }
         : { r: 255, g: 0, b: 0 };
 
-    pheromoneMap.set(key, {
-      type: "pheromone",
-      strength: this.maxPheromoneStrength,
-      ...color,
-    });
+        if((this.maxPheromoneStrength - this.stepCount * 0.02) > 0) {
+          pheromoneMap.set(key, {
+            type: "pheromone",
+            strength: this.maxPheromoneStrength - this.stepCount * 0.02,
+            ...color,
+          });
+        }
   }
 
   updatePheromoneRadar(homePheromoneMap, foodPheromoneMap) {
@@ -185,53 +187,71 @@ export class Ant {
     return result;
   }
 
-  evaluateDirection(radar) {
-    const view = this.getView(90, this.direction, radar);
+  evaluateDirection(radar, mode = "toward", viewAngle = 90) {
+    const view = this.getView(viewAngle, this.direction, radar);
     const sectors = { "-1": [], 0: [], 1: [] };
     const directionDegrees = this.direction * 45;
-
+  
+    // Divide the view angle into 3 equal sectors
+    const sectorWidth = viewAngle / 3;
+  
     for (let { angle, value } of view) {
       let relativeAngle = (angle - directionDegrees + 360) % 360;
       if (relativeAngle > 180) relativeAngle -= 360;
-
-      if (relativeAngle >= -45 && relativeAngle < -15) {
+  
+      if (
+        relativeAngle >= -viewAngle / 2 &&
+        relativeAngle < -sectorWidth / 2
+      ) {
         sectors["-1"].push({ value, angle });
-      } else if (relativeAngle >= -15 && relativeAngle <= 15) {
+      } else if (
+        relativeAngle >= -sectorWidth / 2 &&
+        relativeAngle <= sectorWidth / 2
+      ) {
         sectors["0"].push({ value, angle });
-      } else if (relativeAngle > 15 && relativeAngle <= 45) {
+      } else if (
+        relativeAngle > sectorWidth / 2 &&
+        relativeAngle <= viewAngle / 2
+      ) {
         sectors["1"].push({ value, angle });
       }
     }
-
+  
     const scoreSector = (sector) => {
       if (sector.length === 0) return 0;
       const strengthSum = sector.reduce((sum, { value }) => sum + value, 0);
       const count = sector.length;
-      // Weight concentration higher than strength
-      return strengthSum * 0.5 + count * 1;
+      return strengthSum * 0.5 + count * 1.5;
     };
-
+  
     const scores = {
       "-1": scoreSector(sectors["-1"]),
       0: scoreSector(sectors["0"]),
       1: scoreSector(sectors["1"]),
     };
-
-    const best = Object.entries(scores).reduce(
-      (a, b) => (b[1] > a[1] ? b : a),
-      ["0", 0]
-    );
-    const rotateStep = parseInt(best[0]);
-
-    if (best[1] === 0) {
-      return null;
+  
+    let chosen;
+    if (mode === "toward") {
+      chosen = Object.entries(scores).reduce(
+        (a, b) => (b[1] > a[1] ? b : a),
+        ["0", 0]
+      );
+    } else if (mode === "away") {
+      chosen = Object.entries(scores).reduce(
+        (a, b) => (b[1] < a[1] ? b : a),
+        ["0", Infinity]
+      );
     }
+  
+    const rotateStep = parseInt(chosen[0]);
+    if (chosen[1] === 0) return null;
+  
+    return (this.direction + rotateStep + 8) % 8;
+  }  
 
-    let newDirection = (this.direction + rotateStep + 8) % 8;
-    return newDirection;
-  }
+  addNoise(direction, likelyNoChange = 1) {
+    if (direction === null) return null
 
-  addNoise( likelyNoChange = 1, direction) {
     likelyNoChange = Math.max(0, likelyNoChange);
 
     const totalWeight = likelyNoChange + 2;
@@ -248,86 +268,6 @@ export class Ant {
     }
 
     return (direction + change + 8) % 8;
-  }
-
-  getStrongestPheromone(direction, radar) {
-    const view = this.getView(this.viewRange, direction, radar);
-    let strongestPheromone = 0;
-    let results = [];
-
-    view.forEach((obj) => {
-      if (obj.value > strongestPheromone) {
-        strongestPheromone = obj.value;
-      }
-    });
-
-    if (strongestPheromone === 0) return null;
-
-    view.forEach((obj) => {
-      if (obj.value === strongestPheromone) {
-        results.push(obj.angle);
-      }
-    });
-    return results;
-  }
-
-  getWeakestPheromone(direction, radar) {
-    const view = this.getView(this.viewRange, direction, radar);
-    let weakestSignal = Infinity;
-    let results = [];
-
-    view.forEach((obj) => {
-      if (obj.value < weakestSignal) {
-        weakestSignal = obj.value;
-      }
-    });
-
-    if (weakestSignal === Infinity) return null;
-
-    view.forEach((obj) => {
-      if (obj.value === weakestSignal) {
-        results.push(obj.angle);
-      }
-    });
-    return results;
-  }
-
-  getPheromoneDirection(direction, radar, mode = "weakest") {
-    const pheromoneAngles =
-      mode === "weakest"
-        ? this.getWeakestPheromone(direction, radar)
-        : this.getStrongestPheromone(direction, radar);
-    if (pheromoneAngles === null) return null;
-
-    // If no angles, return the original direction
-    if (pheromoneAngles.length === 0) {
-      return direction;
-    }
-
-    // If only one angle, use it directly
-    if (pheromoneAngles.length === 1) {
-      return Math.floor((pheromoneAngles[0] / 45) % 8);
-    }
-
-    // For multiple angles, use vector addition for proper circular averaging
-    let sumX = 0;
-    let sumY = 0;
-
-    pheromoneAngles.forEach((angle) => {
-      // Convert angle to radians
-      const radians = angle * (Math.PI / 180);
-      // Add vector components
-      sumX += Math.cos(radians);
-      sumY += Math.sin(radians);
-    });
-
-    // Convert back to angle in degrees
-    let finalAngle = Math.atan2(sumY, sumX) * (180 / Math.PI);
-    // Normalize to 0-360 range
-    if (finalAngle < 0) finalAngle += 360;
-
-    // Convert to direction (0-7)
-    return Math.floor((finalAngle / 45) % 8);
   }
 
   getRandomDirection(direction, weight) {
@@ -347,17 +287,25 @@ export class Ant {
   }
 
   sense() {
-    const currentRadar =
+    const goalRadar =
       this.action === "searching" ? this.goalRadar : this.returnRadar;
+    // const returnRadar =
+    //   this.action === "searching" ? this.returnRadar : this.goalRadar;
 
-    const resourceDirection = this.evaluateDirection(this.resourceRadar);
-    const pheromoneDirection = this.evaluateDirection(currentRadar);
-    const randomDirection = this.getRandomDirection(this.direction, 25);
-
+    const resourceDirection = this.evaluateDirection(
+      this.resourceRadar,
+      "toward"
+    );
+    const towardGoalDirection = this.addNoise(this.evaluateDirection(goalRadar, "toward", 110), 10);
+    // const awayReturnDirection = this.evaluateDirection(returnRadar, "away", 315);
+    const randomDirection = this.getRandomDirection(this.direction, 15);
+    
     if (resourceDirection !== null) {
       this.direction = resourceDirection;
-    } else if (pheromoneDirection !== null) {
-      this.direction = pheromoneDirection;
+    } else if (towardGoalDirection !== null) {
+      this.direction = towardGoalDirection;
+    // } else if (awayReturnDirection !== null) {
+    //     this.direction = awayReturnDirection
     } else {
       this.direction = randomDirection;
     }
@@ -384,6 +332,7 @@ export class Ant {
         const resourceType = resourceMap.get(key).type;
 
         if (resourceType === "food" && this.action === "searching") {
+          this.stepCount = 0
           resourceMap.delete(key);
           ctx.clearRect(checkX, checkY, 1, 1);
           this.action = "returning";
@@ -391,6 +340,7 @@ export class Ant {
 
           return;
         } else if (resourceType === "home" && this.action === "returning") {
+          this.stepCount = 0
           this.action = "searching";
           this.direction = this.getOppositeDirection(this.direction);
           return;
