@@ -10,19 +10,19 @@ export class Ant {
     this.gridWidth = gridWidth;
     this.gridHeight = gridHeight;
 
-    this.maxPheromoneStrength = 20;
+    this.maxPheromoneStrength = 30;
     this.minPheromoneStrength = 0.1;
 
-    this.radarDiameter = 21;
-    this.viewRange = 90;
+    this.radarDiameter = 25;
+    this.viewRange = 180;
 
-    this.goalNoise = 10;
-    this.randomNoise = 15;
+    this.goalNoise = 15;
+    this.randomNoise = 25;
 
-    this.pheromoneInterval = 10;
-    this.favorStrength = 5;
-    this.favorConcentration = 1;
-    this.decayRate = 0.0025;
+    this.pheromoneInterval = 5;
+    this.favorStrength = 0.75;
+    this.favorConcentration = 0.5;
+    this.decayRate = 0.005;
 
     this.action = "searching";
     this.resourceRadar = [];

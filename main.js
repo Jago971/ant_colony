@@ -2,8 +2,8 @@ import { Ant } from "./ant.js";
 
 const canvas = document.getElementById("antCanvas");
 const ctx = canvas.getContext("2d", { willReadFrequently: true });
-const gridWidth = 500;
-const gridHeight = 500;
+const gridWidth = 750;
+const gridHeight = 750;
 
 let running = false;
 const loopSpeed = 20;
@@ -155,13 +155,13 @@ function updatePheromones() {
   for (let i = 0; i < gridWidth * gridHeight; i++) {
     if (homePheromoneStrengthGrid[i] > 0) {
       homePheromoneStrengthGrid[i] *= Math.exp(-decayRate);
-      if (homePheromoneStrengthGrid[i] < 0.001)
+      if (homePheromoneStrengthGrid[i] < 0.1)
         homePheromoneStrengthGrid[i] = 0;
     }
 
     if (foodPheromoneStrengthGrid[i] > 0) {
       foodPheromoneStrengthGrid[i] *= Math.exp(-decayRate);
-      if (foodPheromoneStrengthGrid[i] < 0.001)
+      if (foodPheromoneStrengthGrid[i] < 0.1)
         foodPheromoneStrengthGrid[i] = 0;
     }
   }
@@ -276,8 +276,6 @@ window.addEventListener("click", () => {
         ant.moveAnt(resourceGrid);
         ant.drawAnt(ctx);
       });
-
-      // Optionally draw pheromones (would need to update this function too)
     }, loopSpeed);
   }
 });
