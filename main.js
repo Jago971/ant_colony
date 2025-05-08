@@ -78,7 +78,7 @@ function initialiseResources(ctx, resourcesArray) {
         if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
           // Store in typed array instead of Map
           resourceGrid[gridIndex(x, y)] = resourceType;
-          
+
           // Still draw to canvas as before
           ctx.fillStyle = resource.color;
           ctx.fillRect(x, y, 1, 1);
@@ -155,20 +155,27 @@ function updatePheromones() {
   for (let i = 0; i < gridWidth * gridHeight; i++) {
     if (homePheromoneStrengthGrid[i] > 0) {
       homePheromoneStrengthGrid[i] *= Math.exp(-decayRate);
-      if (homePheromoneStrengthGrid[i] < 0.001) homePheromoneStrengthGrid[i] = 0;
+      if (homePheromoneStrengthGrid[i] < 0.001)
+        homePheromoneStrengthGrid[i] = 0;
     }
 
     if (foodPheromoneStrengthGrid[i] > 0) {
       foodPheromoneStrengthGrid[i] *= Math.exp(-decayRate);
-      if (foodPheromoneStrengthGrid[i] < 0.001) foodPheromoneStrengthGrid[i] = 0;
+      if (foodPheromoneStrengthGrid[i] < 0.001)
+        foodPheromoneStrengthGrid[i] = 0;
     }
   }
 }
 
-function drawWorldImageData(ctx, resourceGrid, foodPheromoneStrengthGrid, homePheromoneStrengthGrid) {
+function drawWorldImageData(
+  ctx,
+  resourceGrid,
+  foodPheromoneStrengthGrid,
+  homePheromoneStrengthGrid
+) {
   const imageData = ctx.createImageData(gridWidth, gridHeight);
   const data = imageData.data;
-  const maxStrength = 1;
+  const maxStrength = 1; // You may want to dynamically compute this
 
   for (let y = 0; y < gridHeight; y++) {
     for (let x = 0; x < gridWidth; x++) {
@@ -178,14 +185,12 @@ function drawWorldImageData(ctx, resourceGrid, foodPheromoneStrengthGrid, homePh
       const resource = resourceGrid[idx];
 
       if (resource === FOOD) {
-        // Orange for food
         data[index] = 255;
         data[index + 1] = 165;
         data[index + 2] = 0;
         data[index + 3] = 255;
         continue;
       } else if (resource === HOME) {
-        // Green for home
         data[index] = 0;
         data[index + 1] = 255;
         data[index + 2] = 0;
@@ -197,44 +202,26 @@ function drawWorldImageData(ctx, resourceGrid, foodPheromoneStrengthGrid, homePh
       const homeStrength = homePheromoneStrengthGrid[idx];
 
       if (foodStrength <= 0 && homeStrength <= 0) {
-        data[index + 3] = 0; // Transparent if nothing
+        data[index + 3] = 0;
         continue;
       }
 
-      const totalStrength = foodStrength + homeStrength;
-      const fadeLevel = 1 - (totalStrength / maxStrength);
-      const clampedFade = Math.max(0, Math.min(1, fadeLevel));
-
-      let r, g, b;
-      if (foodStrength > 0 && homeStrength > 0) {
-        const foodRatio = foodStrength / totalStrength;
-        const homeRatio = homeStrength / totalStrength;
-        r = 255 * foodRatio;
-        g = 0;
-        b = 255 * homeRatio;
-      } else if (foodStrength > 0) {
-        r = 255;
-        g = 255 * clampedFade;
-        b = 255 * clampedFade;
-      } else {
-        r = 255 * clampedFade;
-        g = 255 * clampedFade;
-        b = 255;
-      }
+      const r = Math.min(255, (foodStrength / maxStrength) * 255);
+      const b = Math.min(255, (homeStrength / maxStrength) * 255);
+      const a = Math.min(
+        255,
+        ((foodStrength + homeStrength) / maxStrength) * 255
+      );
 
       data[index] = Math.round(r);
-      data[index + 1] = Math.round(g);
+      data[index + 1] = 0;
       data[index + 2] = Math.round(b);
-      data[index + 3] = 255;
+      data[index + 3] = Math.round(a); // Alpha
     }
   }
 
   ctx.putImageData(imageData, 0, 0);
 }
-
-
-
-
 
 let frameCount = 0;
 let lastTime = Date.now();
@@ -243,7 +230,7 @@ window.addEventListener("click", () => {
   if (!running) {
     running = true;
     initialiseResources(ctx, [food1, food2, food3, home]);
-    initialiseColony(500);
+    initialiseColony(750);
 
     setInterval(() => {
       const now = Date.now();
@@ -261,26 +248,36 @@ window.addEventListener("click", () => {
 
       // Main simulation loop
       updatePheromones();
-      drawWorldImageData(ctx, resourceGrid, foodPheromoneStrengthGrid, homePheromoneStrengthGrid)
-      
-      colony.forEach(ant => {
+      drawWorldImageData(
+        ctx,
+        resourceGrid,
+        foodPheromoneStrengthGrid,
+        homePheromoneStrengthGrid
+      );
+
+      colony.forEach((ant) => {
         ant.collectResource(resourceGrid, ctx);
         ant.moveAwayFromWall(gridWidth, gridHeight);
-        
-        // Pass the new arrays to existing methods
-        ant.updatePheromoneRadar(homePheromoneStrengthGrid, foodPheromoneStrengthGrid);
-        ant.updateResourceRadar(resourceGrid);
-        
-        ant.mapPheromones(homePheromoneStrengthGrid, foodPheromoneStrengthGrid, resourceGrid);
-        ant.sense();
 
+        // Pass the new arrays to existing methods
+        ant.updatePheromoneRadar(
+          homePheromoneStrengthGrid,
+          foodPheromoneStrengthGrid
+        );
+        ant.updateResourceRadar(resourceGrid);
+
+        ant.mapPheromones(
+          homePheromoneStrengthGrid,
+          foodPheromoneStrengthGrid,
+          resourceGrid
+        );
+        ant.sense();
         ant.eraseAnt(ctx);
         ant.moveAnt(resourceGrid);
         ant.drawAnt(ctx);
       });
-      
+
       // Optionally draw pheromones (would need to update this function too)
     }, loopSpeed);
   }
 });
-

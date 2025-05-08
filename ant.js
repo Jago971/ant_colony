@@ -10,15 +10,21 @@ export class Ant {
     this.gridWidth = gridWidth;
     this.gridHeight = gridHeight;
 
-    this.action = "searching";
     this.maxPheromoneStrength = 20;
+    this.minPheromoneStrength = 0.1;
+
     this.radarDiameter = 21;
-    this.viewRange = 110;
+    this.viewRange = 90;
+
     this.goalNoise = 10;
-    this.randomNoise = 20;
-    this.pheromoneInterval = 5;
-    this.favorStrength = 0.5;
-    this.favorConcentration = 2;
+    this.randomNoise = 15;
+
+    this.pheromoneInterval = 10;
+    this.favorStrength = 5;
+    this.favorConcentration = 1;
+    this.decayRate = 0.0025;
+
+    this.action = "searching";
     this.resourceRadar = [];
     this.goalRadar = [];
     this.returnRadar = [];
@@ -50,35 +56,8 @@ export class Ant {
     this.direction = (this.direction + step + 8) % 8;
   }
 
-  // moveAnt(resourceMap) {
-  //   this.stepCount++;
-  //   const [offsetX, offsetY] = this.directions[this.direction];
-
-  //   const newX = this.x + offsetX;
-  //   const newY = this.y + offsetY;
-
-  //   // Check grid boundaries
-  //   if (
-  //     newX >= 0 &&
-  //     newX < this.gridWidth &&
-  //     newY >= 0 &&
-  //     newY < this.gridHeight
-  //   ) {
-  //     const key = `${newX},${newY}`;
-
-  //     // Block movement if the tile exists in the resource map
-  //     if (!resourceMap.has(key)) {
-  //       this.x = newX;
-  //       this.y = newY;
-  //     }
-  //   }
-  // }
-
   moveAnt(resourceGrid) {
     const EMPTY = 0;
-    const FOOD = 2;
-    const HOME = 1;
-    this.stepCount++;
     const [offsetX, offsetY] = this.directions[this.direction];
 
     const newX = this.x + offsetX;
@@ -99,6 +78,8 @@ export class Ant {
         this.y = newY;
       }
     }
+    
+    this.stepCount++;
   }
 
   mapPheromones(
@@ -115,13 +96,11 @@ export class Ant {
 
     // Skip if there's a resource here
     if (resourceGrid[idx] !== EMPTY) return;
-
-    const decayRate = 0.002;
     const strength = Math.max(
       0,
-      this.maxPheromoneStrength * Math.exp(-this.stepCount * decayRate)
+      this.maxPheromoneStrength * Math.exp(-this.stepCount * this.decayRate)
     );
-    if (strength <= 0) return;
+    if (strength <= this.minPheromoneStrength) return;
 
     if (this.action === "searching" && homePheromoneStrengthGrid[idx] < strength) {
       homePheromoneStrengthGrid[idx] += strength;
