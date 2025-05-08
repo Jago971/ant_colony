@@ -45,18 +45,18 @@ export class Ant {
 
   //#region Configuration
   configureSettings() {
-    this.maxPheromoneStrength = 30;
+    this.maxPheromoneStrength = 10;
     this.minPheromoneStrength = 0.1;
-    this.pheromoneInterval = 5;
-    this.decayRate = 0.005;
+    this.pheromoneInterval = 3;
+    this.decayRate = 0.01;
     this.favorStrength = 0.75;
     this.favorConcentration = 0.5;
 
-    this.radarDiameter = 25;
+    this.radarDiameter = 15;
     this.viewRange = 180;
 
-    this.goalNoise = 15;
-    this.randomNoise = 25;
+    this.goalNoise = 10;
+    this.randomNoise = 20;
   }
   //#endregion
 

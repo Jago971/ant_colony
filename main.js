@@ -30,11 +30,11 @@ const foodPheromoneStrengthGrid = new Float32Array(gridWidth * gridHeight);
 
 //#region Resource Definitions
 const home = {
-  x: gridWidth - 20,
-  y: gridHeight - 20,
+  x: gridWidth - 10,
+  y: gridHeight - 10,
   type: "home",
   numericType: HOME,
-  width: 15,
+  width: 5,
   color: "green",
 };
 
@@ -43,7 +43,7 @@ const food1 = {
   y: 20,
   type: "food",
   numericType: FOOD,
-  width: 25,
+  width: 20,
   color: "orange",
 };
 
@@ -52,7 +52,7 @@ const food2 = {
   y: 20,
   type: "food",
   numericType: FOOD,
-  width: 25,
+  width: 20,
   color: "orange",
 };
 
@@ -61,7 +61,7 @@ const food3 = {
   y: gridHeight - 20,
   type: "food",
   numericType: FOOD,
-  width: 25,
+  width: 20,
   color: "orange",
 };
 //#endregion
@@ -95,7 +95,7 @@ function initialiseResources(ctx, resourcesArray) {
 
 function initialiseColony(number) {
   for (let i = 0; i < number; i++) {
-    const ant = new Ant(gridWidth - 30, gridHeight - 30, gridWidth, gridHeight);
+    const ant = new Ant(gridWidth - 1, gridHeight - 1, gridWidth, gridHeight);
     colony.push(ant);
   }
 }
@@ -154,8 +154,6 @@ function drawWorldImageData(
         continue;
       }
 
-      // Uncomment to visualize pheromones
-      /*
       const foodStrength = foodPheromoneStrengthGrid[idx];
       const homeStrength = homePheromoneStrengthGrid[idx];
 
@@ -172,7 +170,6 @@ function drawWorldImageData(
       data[index + 1] = 0;
       data[index + 2] = Math.round(b);
       data[index + 3] = Math.round(a);
-      */
     }
   }
 
