@@ -1,30 +1,39 @@
+//#region Imports
 import { Ant } from "./ant.js";
+//#endregion
 
+//#region Canvas Setup
 const canvas = document.getElementById("antCanvas");
 const ctx = canvas.getContext("2d", { willReadFrequently: true });
 const gridWidth = 750;
 const gridHeight = 750;
+//#endregion
 
-let running = false;
+//#region Constants
 const loopSpeed = 20;
 
-const colony = [];
-
-// Create typed arrays for resources and pheromones
-const resourceGrid = new Uint8Array(gridWidth * gridHeight);
-const homePheromoneStrengthGrid = new Float32Array(gridWidth * gridHeight);
-const foodPheromoneStrengthGrid = new Float32Array(gridWidth * gridHeight);
-
-// Define constants for resource types
 const EMPTY = 0;
 const HOME = 1;
 const FOOD = 2;
+//#endregion
 
+//#region Simulation State
+let running = false;
+const colony = [];
+//#endregion
+
+//#region Typed Arrays
+const resourceGrid = new Uint8Array(gridWidth * gridHeight);
+const homePheromoneStrengthGrid = new Float32Array(gridWidth * gridHeight);
+const foodPheromoneStrengthGrid = new Float32Array(gridWidth * gridHeight);
+//#endregion
+
+//#region Resource Definitions
 const home = {
   x: gridWidth - 20,
   y: gridHeight - 20,
-  type: "home", // Keep the string for backwards compatibility
-  numericType: HOME, // Add numeric type
+  type: "home",
+  numericType: HOME,
   width: 15,
   color: "green",
 };
@@ -55,16 +64,15 @@ const food3 = {
   width: 25,
   color: "orange",
 };
+//#endregion
 
-// Convert x,y coordinates to grid index
+//#region Utility Functions
 function gridIndex(x, y) {
   return y * gridWidth + x;
 }
+//#endregion
 
-const homePheromoneMap = new Map();
-const foodPheromoneMap = new Map();
-const resourceMap = new Map();
-
+//#region Initialization Functions
 function initialiseResources(ctx, resourcesArray) {
   resourcesArray.forEach((resource) => {
     const half = Math.floor(resource.width / 2);
@@ -76,10 +84,7 @@ function initialiseResources(ctx, resourcesArray) {
         const y = resource.y + offsetY;
 
         if (x >= 0 && x < gridWidth && y >= 0 && y < gridHeight) {
-          // Store in typed array instead of Map
           resourceGrid[gridIndex(x, y)] = resourceType;
-
-          // Still draw to canvas as before
           ctx.fillStyle = resource.color;
           ctx.fillRect(x, y, 1, 1);
         }
@@ -88,35 +93,15 @@ function initialiseResources(ctx, resourcesArray) {
   });
 }
 
-// function initialiseResources(ctx, resourcesArray) {
-//   resourcesArray.forEach((resource) => {
-//     const half = Math.floor(resource.width / 2);
-
-//     for (let offsetY = -half; offsetY <= half; offsetY++) {
-//       for (let offsetX = -half; offsetX <= half; offsetX++) {
-//         const x = resource.x + offsetX;
-//         const y = resource.y + offsetY;
-
-//         ctx.fillStyle = resource.color;
-//         ctx.fillRect(x, y, 1, 1);
-
-//         const key = `${x},${y}`;
-//         resourceMap.set(key, {
-//           type: resource.type,
-//           color: resource.color,
-//         });
-//       }
-//     }
-//   });
-// }
-
 function initialiseColony(number) {
   for (let i = 0; i < number; i++) {
     const ant = new Ant(gridWidth - 30, gridHeight - 30, gridWidth, gridHeight);
     colony.push(ant);
   }
 }
+//#endregion
 
+//#region Ant Update
 function updateAnt(ant) {
   ant.collectResource(resourceMap, ctx);
   ant.moveAwayFromWall(gridWidth, gridHeight);
@@ -124,49 +109,35 @@ function updateAnt(ant) {
   ant.updateResourceRadar(resourceMap);
   ant.mapPheromones(homePheromoneMap, foodPheromoneMap, resourceMap);
   ant.sense();
-
   ant.eraseAnt(ctx);
   ant.moveAnt(resourceMap);
   ant.drawAnt(ctx);
 }
+//#endregion
 
-// function updatePheromones(ctx, pheromoneMap) {
-//   const PheromoneFadeStep = 0.01;
-//   const colorFadeStep = (255 / 10) * PheromoneFadeStep;
-
-//   for (const [key, pheromoneNode] of pheromoneMap.entries()) {
-//     pheromoneNode.strength =
-//       Math.round((pheromoneNode.strength - PheromoneFadeStep) * 100) / 100;
-
-//     if (pheromoneNode.strength <= 0) {
-//       pheromoneMap.delete(key);
-//       continue; // Skip rendering
-//     }
-
-//     pheromoneNode.r = Math.min(255, pheromoneNode.r + colorFadeStep);
-//     pheromoneNode.g = Math.min(255, pheromoneNode.g + colorFadeStep);
-//     pheromoneNode.b = Math.min(255, pheromoneNode.b + colorFadeStep);
-//   }
-// }
-
+//#region Pheromone Update
 function updatePheromones() {
-  const decayRate = 0.002; // Adjust for faster or slower decay
+  const decayRate = 0.002;
 
   for (let i = 0; i < gridWidth * gridHeight; i++) {
     if (homePheromoneStrengthGrid[i] > 0) {
       homePheromoneStrengthGrid[i] *= Math.exp(-decayRate);
-      if (homePheromoneStrengthGrid[i] < 0.1)
+      if (homePheromoneStrengthGrid[i] < 0.1) {
         homePheromoneStrengthGrid[i] = 0;
+      }
     }
 
     if (foodPheromoneStrengthGrid[i] > 0) {
       foodPheromoneStrengthGrid[i] *= Math.exp(-decayRate);
-      if (foodPheromoneStrengthGrid[i] < 0.1)
+      if (foodPheromoneStrengthGrid[i] < 0.1) {
         foodPheromoneStrengthGrid[i] = 0;
+      }
     }
   }
 }
+//#endregion
 
+//#region World Rendering
 function drawWorldImageData(
   ctx,
   resourceGrid,
@@ -175,13 +146,12 @@ function drawWorldImageData(
 ) {
   const imageData = ctx.createImageData(gridWidth, gridHeight);
   const data = imageData.data;
-  const maxStrength = 1; // You may want to dynamically compute this
+  const maxStrength = 1;
 
   for (let y = 0; y < gridHeight; y++) {
     for (let x = 0; x < gridWidth; x++) {
       const idx = y * gridWidth + x;
       const index = idx * 4;
-
       const resource = resourceGrid[idx];
 
       if (resource === FOOD) {
@@ -198,6 +168,8 @@ function drawWorldImageData(
         continue;
       }
 
+      // Uncomment to visualize pheromones
+      /*
       const foodStrength = foodPheromoneStrengthGrid[idx];
       const homeStrength = homePheromoneStrengthGrid[idx];
 
@@ -208,27 +180,30 @@ function drawWorldImageData(
 
       const r = Math.min(255, (foodStrength / maxStrength) * 255);
       const b = Math.min(255, (homeStrength / maxStrength) * 255);
-      const a = Math.min(
-        255,
-        ((foodStrength + homeStrength) / maxStrength) * 255
-      );
+      const a = Math.min(255, ((foodStrength + homeStrength) / maxStrength) * 255);
 
       data[index] = Math.round(r);
       data[index + 1] = 0;
       data[index + 2] = Math.round(b);
-      data[index + 3] = Math.round(a); // Alpha
+      data[index + 3] = Math.round(a);
+      */
     }
   }
 
   ctx.putImageData(imageData, 0, 0);
 }
+//#endregion
 
+//#region Performance Tracking
 let frameCount = 0;
 let lastTime = Date.now();
+//#endregion
 
+//#region Simulation Loop
 window.addEventListener("click", () => {
   if (!running) {
     running = true;
+
     initialiseResources(ctx, [food1, food2, food3, home]);
     initialiseColony(750);
 
@@ -236,17 +211,14 @@ window.addEventListener("click", () => {
       const now = Date.now();
       const deltaTime = now - lastTime;
 
-      // Update FPS every second
       if (deltaTime >= 1000) {
-        const fps = frameCount; // FPS is the number of frames within 1 second
+        const fps = frameCount;
         console.log(`FPS: ${fps}`);
-        frameCount = 0; // Reset frame count
-        lastTime = now; // Reset the time
+        frameCount = 0;
+        lastTime = now;
       }
+      frameCount++;
 
-      frameCount++; // Increment frame count
-
-      // Main simulation loop
       updatePheromones();
       drawWorldImageData(
         ctx,
@@ -258,14 +230,11 @@ window.addEventListener("click", () => {
       colony.forEach((ant) => {
         ant.collectResource(resourceGrid, ctx);
         ant.moveAwayFromWall(gridWidth, gridHeight);
-
-        // Pass the new arrays to existing methods
         ant.updatePheromoneRadar(
           homePheromoneStrengthGrid,
           foodPheromoneStrengthGrid
         );
         ant.updateResourceRadar(resourceGrid);
-
         ant.mapPheromones(
           homePheromoneStrengthGrid,
           foodPheromoneStrengthGrid,
@@ -279,3 +248,4 @@ window.addEventListener("click", () => {
     }, loopSpeed);
   }
 });
+//#endregion

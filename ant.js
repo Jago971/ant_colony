@@ -1,48 +1,66 @@
 export class Ant {
+  //#region Constants
+  static DIRECTION = {
+    UP: 0,
+    UP_RIGHT: 1,
+    RIGHT: 2,
+    DOWN_RIGHT: 3,
+    DOWN: 4,
+    DOWN_LEFT: 5,
+    LEFT: 6,
+    UP_LEFT: 7
+  };
+
+  static RESOURCE_TYPE = {
+    EMPTY: 0,
+    HOME: 1,
+    FOOD: 2
+  };
+
+  static DIRECTION_VECTORS = [
+    [0, -1], [1, -1], [1, 0], [1, 1],
+    [0, 1], [-1, 1], [-1, 0], [-1, -1]
+  ];
+  //#endregion
+
+  //#region Constructor
   constructor(x, y, gridWidth, gridHeight) {
     this.x = x;
     this.y = y;
-    this.direction = 7;
+    this.direction = Ant.DIRECTION.UP_LEFT;
     this.stepCount = 0;
-
-    this.background = null;
+    this.action = "searching";
 
     this.gridWidth = gridWidth;
     this.gridHeight = gridHeight;
+    this.gridIndex = (x, y) => y * gridWidth + x;
 
+    this.resourceRadar = [];
+    this.goalRadar = [];
+    this.returnRadar = [];
+
+    this.configureSettings();
+  }
+  //#endregion
+
+  //#region Configuration
+  configureSettings() {
     this.maxPheromoneStrength = 30;
     this.minPheromoneStrength = 0.1;
+    this.pheromoneInterval = 5;
+    this.decayRate = 0.005;
+    this.favorStrength = 0.75;
+    this.favorConcentration = 0.5;
 
     this.radarDiameter = 25;
     this.viewRange = 180;
 
     this.goalNoise = 15;
     this.randomNoise = 25;
-
-    this.pheromoneInterval = 5;
-    this.favorStrength = 0.75;
-    this.favorConcentration = 0.5;
-    this.decayRate = 0.005;
-
-    this.action = "searching";
-    this.resourceRadar = [];
-    this.goalRadar = [];
-    this.returnRadar = [];
-
-    this.gridIndex = (x, y) => y * gridWidth + x;
   }
+  //#endregion
 
-  directions = [
-    [0, -1], // 0: up
-    [1, -1], // 1: up-right
-    [1, 0], // 2: right
-    [1, 1], // 3: down-right
-    [0, 1], // 4: down
-    [-1, 1], // 5: down-left
-    [-1, 0], // 6: left
-    [-1, -1], // 7: up-left
-  ];
-
+  //#region Drawing
   eraseAnt(ctx) {
     ctx.clearRect(this.x, this.y, 1, 1);
   }
@@ -51,100 +69,113 @@ export class Ant {
     ctx.fillStyle = "black";
     ctx.fillRect(this.x, this.y, 1, 1);
   }
+  //#endregion
 
+  //#region Movement
   rotateAnt(step = 1) {
     this.direction = (this.direction + step + 8) % 8;
   }
 
-  moveAnt(resourceGrid) {
-    const EMPTY = 0;
-    const [offsetX, offsetY] = this.directions[this.direction];
+  getOppositeDirection(direction) {
+    return (direction + 4) % 8;
+  }
 
+  moveAnt(resourceGrid) {
+    const [offsetX, offsetY] = Ant.DIRECTION_VECTORS[this.direction];
     const newX = this.x + offsetX;
     const newY = this.y + offsetY;
 
-    // Check grid boundaries
     if (
-      newX >= 0 &&
-      newX < this.gridWidth &&
-      newY >= 0 &&
-      newY < this.gridHeight
+      newX >= 0 && newX < this.gridWidth &&
+      newY >= 0 && newY < this.gridHeight
     ) {
       const idx = this.gridIndex(newX, newY);
-
-      // Block movement if there's a resource
-      if (resourceGrid[idx] === EMPTY) {
+      if (resourceGrid[idx] === Ant.RESOURCE_TYPE.EMPTY) {
         this.x = newX;
         this.y = newY;
       }
     }
-    
+
     this.stepCount++;
   }
 
-  mapPheromones(
-    homePheromoneStrengthGrid,
-    foodPheromoneStrengthGrid,
-    resourceGrid
-  ) {
-    const EMPTY = 0;
-    const FOOD = 2;
-    const HOME = 1;
+  moveAwayFromWall() {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+
+        const currentX = this.x + dx;
+        const currentY = this.y + dy;
+
+        if (
+          currentX < 0 || currentX >= this.gridWidth ||
+          currentY < 0 || currentY >= this.gridHeight
+        ) {
+          this.direction = this.getOppositeDirection(this.direction);
+          return;
+        }
+      }
+    }
+  }
+  //#endregion
+
+  //#region Pheromone Mapping
+  mapPheromones(homePheremoneStrengthGrid, foodPheremoneStrengthGrid, resourceGrid) {
     if (this.stepCount % this.pheromoneInterval !== 0) return;
 
     const idx = this.gridIndex(this.x, this.y);
+    if (resourceGrid[idx] !== Ant.RESOURCE_TYPE.EMPTY) return;
 
-    // Skip if there's a resource here
-    if (resourceGrid[idx] !== EMPTY) return;
     const strength = Math.max(
       0,
       this.maxPheromoneStrength * Math.exp(-this.stepCount * this.decayRate)
     );
+
     if (strength <= this.minPheromoneStrength) return;
 
-    if (this.action === "searching" && homePheromoneStrengthGrid[idx] < strength) {
-      homePheromoneStrengthGrid[idx] += strength;
-    } else if (this.action === "returning" && foodPheromoneStrengthGrid[idx] < strength) {
-      foodPheromoneStrengthGrid[idx] += strength;
+    if (this.action === "searching" && homePheremoneStrengthGrid[idx] < strength) {
+      homePheremoneStrengthGrid[idx] += strength;
+    } else if (this.action === "returning" && foodPheremoneStrengthGrid[idx] < strength) {
+      foodPheremoneStrengthGrid[idx] += strength;
     }
   }
 
-  updatePheromoneRadar(homePheromoneStrengthGrid, foodPheromoneStrengthGrid) {
-    const radarRadius = Math.floor(this.radarDiameter / 2);
-
-    const getRadar = (grid) => {
-      const result = [];
-      for (let dy = -radarRadius; dy <= radarRadius; dy++) {
-        const row = [];
-        for (let dx = -radarRadius; dx <= radarRadius; dx++) {
-          const x = this.x + dx;
-          const y = this.y + dy;
-
-          // Skip out of bounds coordinates
-          if (x < 0 || x >= this.gridWidth || y < 0 || y >= this.gridHeight) {
-            row.push(0);
-            continue;
-          }
-
-          const idx = y * this.gridWidth + x; // Calculate index directly
-          const strength = grid[idx] || 0;
-          row.push(strength);
-        }
-        result.push(row);
-      }
-      return result;
-    };
-
-    this.goalRadar = getRadar(foodPheromoneStrengthGrid);
-    this.returnRadar = getRadar(homePheromoneStrengthGrid);
+  updatePheromoneRadar(homePheremoneStrengthGrid, foodPheremoneStrengthGrid) {
+    this.goalRadar = this._buildRadar(foodPheremoneStrengthGrid);
+    this.returnRadar = this._buildRadar(homePheremoneStrengthGrid);
   }
 
-  updateResourceRadar(resourceGrid) {
-    const EMPTY = 0;
-    const FOOD = 2;
-    const HOME = 1;
+  _buildRadar(grid) {
     const radarRadius = Math.floor(this.radarDiameter / 2);
-    const targetType = this.action === "searching" ? FOOD : HOME; // Use constants
+    const result = [];
+
+    for (let dy = -radarRadius; dy <= radarRadius; dy++) {
+      const row = [];
+      for (let dx = -radarRadius; dx <= radarRadius; dx++) {
+        const x = this.x + dx;
+        const y = this.y + dy;
+
+        if (x < 0 || x >= this.gridWidth || y < 0 || y >= this.gridHeight) {
+          row.push(0);
+          continue;
+        }
+
+        const idx = this.gridIndex(x, y);
+        row.push(grid[idx] || 0);
+      }
+      result.push(row);
+    }
+
+    return result;
+  }
+  //#endregion
+
+  //#region Resource Radar
+  updateResourceRadar(resourceGrid) {
+    const radarRadius = Math.floor(this.radarDiameter / 2);
+    const targetType = this.action === "searching"
+      ? Ant.RESOURCE_TYPE.FOOD
+      : Ant.RESOURCE_TYPE.HOME;
 
     const grid = [];
     for (let dy = -radarRadius; dy <= radarRadius; dy++) {
@@ -153,22 +184,22 @@ export class Ant {
         const x = this.x + dx;
         const y = this.y + dy;
 
-        // Skip out of bounds coordinates
         if (x < 0 || x >= this.gridWidth || y < 0 || y >= this.gridHeight) {
           row.push(0);
           continue;
         }
 
-        const idx = y * this.gridWidth + x; // Calculate index directly
-        const match = resourceGrid[idx] === targetType ? 1 : 0;
-        row.push(match);
+        const idx = this.gridIndex(x, y);
+        row.push(resourceGrid[idx] === targetType ? 1 : 0);
       }
       grid.push(row);
     }
 
     this.resourceRadar = grid;
   }
+  //#endregion
 
+  //#region Radar Evaluation
   getAngle(dx, dy) {
     let angle = Math.atan2(dy, dx) * (180 / Math.PI);
     angle = (angle + 90) % 360;
@@ -178,52 +209,43 @@ export class Ant {
 
   getView(angleRange, direction, radar) {
     const directionAngle = direction * 45;
-    const lowerBoundary =
-      directionAngle - angleRange / 2 < 0
-        ? directionAngle - angleRange / 2 + 360
-        : directionAngle - angleRange / 2;
-    const upperBoundary =
-      directionAngle + angleRange / 2 > 360
-        ? (directionAngle + angleRange / 2) % 360
-        : directionAngle + angleRange / 2;
+    const lowerBoundary = (directionAngle - angleRange / 2 + 360) % 360;
+    const upperBoundary = (directionAngle + angleRange / 2) % 360;
 
-    let result = [];
-
+    const result = [];
     const centerX = Math.floor(radar[0].length / 2);
     const centerY = Math.floor(radar.length / 2);
 
     for (let y = 0; y < radar.length; y++) {
       for (let x = 0; x < radar[y].length; x++) {
         if (x === centerX && y === centerY) continue;
+
         const value = radar[y][x];
         if (value > 0) {
           const dx = x - centerX;
           const dy = y - centerY;
-
           const angle = this.getAngle(dx, dy);
 
-          if (
+          const inView = (
             (angle >= lowerBoundary && angle <= upperBoundary) ||
             (lowerBoundary > upperBoundary &&
               (angle >= lowerBoundary || angle <= upperBoundary))
-          ) {
-            result.push({
-              value,
-              angle,
-            });
+          );
+
+          if (inView) {
+            result.push({ value, angle });
           }
         }
       }
     }
+
     return result;
   }
 
   evaluateDirection(radar, mode = "toward", viewAngle = 90) {
     const view = this.getView(viewAngle, this.direction, radar);
-    const sectors = { "-1": [], 0: [], 1: [] };
+    const sectors = { "-1": [], "0": [], "1": [] };
     const directionDegrees = this.direction * 45;
-
-    // Divide the view angle into 3 equal sectors
     const sectorWidth = viewAngle / 3;
 
     for (let { angle, value } of view) {
@@ -254,8 +276,8 @@ export class Ant {
 
     const scores = {
       "-1": scoreSector(sectors["-1"]),
-      0: scoreSector(sectors["0"]),
-      1: scoreSector(sectors["1"]),
+      "0": scoreSector(sectors["0"]),
+      "1": scoreSector(sectors["1"])
     };
 
     let chosen;
@@ -276,24 +298,21 @@ export class Ant {
 
     return (this.direction + rotateStep + 8) % 8;
   }
+  //#endregion
 
+  //#region Noise and Direction Helpers
   addNoise(direction, likelyNoChange = 1) {
     if (direction === null) return null;
 
     likelyNoChange = Math.max(0, likelyNoChange);
-
     const totalWeight = likelyNoChange + 2;
     const probNoChange = likelyNoChange / totalWeight;
     const rand = Math.random();
 
     let change;
-    if (rand < probNoChange) {
-      change = 0;
-    } else if (rand < probNoChange + 1 / totalWeight) {
-      change = -1;
-    } else {
-      change = 1;
-    }
+    if (rand < probNoChange) change = 0;
+    else if (rand < probNoChange + 1 / totalWeight) change = -1;
+    else change = 1;
 
     return (direction + change + 8) % 8;
   }
@@ -313,19 +332,19 @@ export class Ant {
       ? directions[0]
       : directions[2];
   }
+  //#endregion
 
+  //#region Sensing and Interaction
   sense() {
-    const goalRadar =
-      this.action === "searching" ? this.goalRadar : this.returnRadar;
+    const goalRadar = this.action === "searching" ? this.goalRadar : this.returnRadar;
 
-    const resourceDirection = this.evaluateDirection(
-      this.resourceRadar,
-      "toward"
-    );
+    const resourceDirection = this.evaluateDirection(this.resourceRadar, "toward");
+
     const towardGoalDirection = this.addNoise(
       this.evaluateDirection(goalRadar, "toward", this.viewRange),
       this.goalNoise
     );
+
     const randomDirection = this.getRandomDirection(this.direction, this.randomNoise);
 
     if (resourceDirection !== null) {
@@ -337,48 +356,7 @@ export class Ant {
     }
   }
 
-  // collectResource(resourceMap, ctx) {
-  //   const directions = [
-  //     [-1, -1],
-  //     [-1, 0],
-  //     [-1, 1],
-  //     [0, -1],
-  //     [0, 1],
-  //     [1, -1],
-  //     [1, 0],
-  //     [1, 1],
-  //   ];
-
-  //   for (const [dx, dy] of directions) {
-  //     const checkX = this.x + dx;
-  //     const checkY = this.y + dy;
-  //     const key = `${checkX},${checkY}`;
-
-  //     if (resourceMap.has(key)) {
-  //       const resourceType = resourceMap.get(key).type;
-
-  //       if (resourceType === "food" && this.action === "searching") {
-  //         this.stepCount = 0
-  //         resourceMap.delete(key);
-  //         ctx.clearRect(checkX, checkY, 1, 1);
-  //         this.action = "returning";
-  //         this.direction = this.getOppositeDirection(this.direction);
-
-  //         return;
-  //       } else if (resourceType === "home" && this.action === "returning") {
-  //         this.stepCount = 0
-  //         this.action = "searching";
-  //         this.direction = this.getOppositeDirection(this.direction);
-  //         return;
-  //       }
-  //     }
-  //   }
-  // }
-
   collectResource(resourceGrid, ctx) {
-    const EMPTY = 0;
-    const FOOD = 2;
-    const HOME = 1;
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         if (dx === 0 && dy === 0) continue;
@@ -387,22 +365,20 @@ export class Ant {
         const checkY = this.y + dy;
 
         if (
-          checkX >= 0 &&
-          checkX < this.gridWidth &&
-          checkY >= 0 &&
-          checkY < this.gridHeight
+          checkX >= 0 && checkX < this.gridWidth &&
+          checkY >= 0 && checkY < this.gridHeight
         ) {
           const idx = this.gridIndex(checkX, checkY);
           const resourceType = resourceGrid[idx];
 
-          if (resourceType === FOOD && this.action === "searching") {
+          if (resourceType === Ant.RESOURCE_TYPE.FOOD && this.action === "searching") {
             this.stepCount = 0;
-            resourceGrid[idx] = EMPTY; // Clear the resource
-            ctx.clearRect(checkX, checkY, 1, 1); // Clear from canvas
+            resourceGrid[idx] = Ant.RESOURCE_TYPE.EMPTY;
+            ctx.clearRect(checkX, checkY, 1, 1);
             this.action = "returning";
             this.direction = this.getOppositeDirection(this.direction);
             return;
-          } else if (resourceType === HOME && this.action === "returning") {
+          } else if (resourceType === Ant.RESOURCE_TYPE.HOME && this.action === "returning") {
             this.stepCount = 0;
             this.action = "searching";
             this.direction = this.getOppositeDirection(this.direction);
@@ -413,43 +389,15 @@ export class Ant {
     }
   }
 
-  getOppositeDirection(direction) {
-    return (direction + 4) % 8;
-  }
-
-  moveAwayFromWall(gridWidth, gridHeight) {
-    let dirX = 0;
-    let dirY = 0;
-
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-
-        const currentX = this.x + dx;
-        const currentY = this.y + dy;
-
-        if (
-          currentX < 0 ||
-          currentX >= gridWidth ||
-          currentY < 0 ||
-          currentY >= gridHeight
-        ) {
-          this.direction = this.getOppositeDirection(this.direction);
-        }
-      }
-    }
-  }
-
   updatePheromone(homePheromoneMap, foodPheromoneMap, mode = "increase") {
-    const reducingMap =
-      this.action === "searching" ? foodPheromoneMap : homePheromoneMap;
+    const reducingMap = this.action === "searching" ? foodPheromoneMap : homePheromoneMap;
     const key = `${this.x},${this.y}`;
 
     if (reducingMap.has(key)) {
       const pheromone = reducingMap.get(key);
-      pheromone.strength =
-        mode === "increase" ? pheromone.strength + 1 : pheromone.strength - 1;
+      pheromone.strength += mode === "increase" ? 1 : -1;
       reducingMap.set(key, pheromone);
     }
   }
+  //#endregion
 }
