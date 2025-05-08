@@ -5,8 +5,8 @@ import { Ant } from "./ant.js";
 //#region Canvas Setup
 const canvas = document.getElementById("antCanvas");
 const ctx = canvas.getContext("2d", { willReadFrequently: true });
-const gridWidth = 750;
-const gridHeight = 750;
+const gridWidth = 200;
+const gridHeight = 200;
 //#endregion
 
 //#region Constants
@@ -101,20 +101,6 @@ function initialiseColony(number) {
 }
 //#endregion
 
-//#region Ant Update
-function updateAnt(ant) {
-  ant.collectResource(resourceMap, ctx);
-  ant.moveAwayFromWall(gridWidth, gridHeight);
-  ant.updatePheromoneRadar(homePheromoneMap, foodPheromoneMap);
-  ant.updateResourceRadar(resourceMap);
-  ant.mapPheromones(homePheromoneMap, foodPheromoneMap, resourceMap);
-  ant.sense();
-  ant.eraseAnt(ctx);
-  ant.moveAnt(resourceMap);
-  ant.drawAnt(ctx);
-}
-//#endregion
-
 //#region Pheromone Update
 function updatePheromones() {
   const decayRate = 0.002;
@@ -205,7 +191,7 @@ window.addEventListener("click", () => {
     running = true;
 
     initialiseResources(ctx, [food1, food2, food3, home]);
-    initialiseColony(750);
+    initialiseColony(200);
 
     setInterval(() => {
       const now = Date.now();
